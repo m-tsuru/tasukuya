@@ -2,16 +2,21 @@ import asyncio
 import logging
 import signal
 import sys
+import os
 
 import discord
 from discord.ext import commands
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 定数
 COMMAND_PREFIX_DEFAULT = "/"
 DISCORD_TOKEN_UNSETTED_DEFAULT = "UNSET"  # noqa: S105
 
 # トークン
-DISCORD_TOKEN = "UNSET"  # noqa: S105
+COMMAND_PREFIX = os.getenv("TASUKUYA_COMMAND_PREFIX", COMMAND_PREFIX_DEFAULT)
+DISCORD_TOKEN = os.getenv("TASUKUYA_DISCORD_TOKEN", DISCORD_TOKEN_UNSETTED_DEFAULT)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -26,7 +31,7 @@ logger = logging.basicConfig(
 async def _main() -> None:
     logger = logging.getLogger("tasukuya")
 
-    bot = commands.Bot(command_prefix=COMMAND_PREFIX_DEFAULT, intents=intents)
+    bot = commands.Bot(command_prefix=COMMAND_PREFIX, intents=intents)
 
     stop_event = asyncio.Event()
 
