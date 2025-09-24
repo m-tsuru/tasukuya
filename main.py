@@ -1,8 +1,10 @@
 import asyncio
 import logging
+import os
 import signal
 import sys
-import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands
@@ -13,13 +15,13 @@ load_dotenv()
 # 定数
 COMMAND_PREFIX_DEFAULT = "/"
 DISCORD_TOKEN_UNSETTED_DEFAULT = "UNSET"  # noqa: S105
+DEBUG = True
 
 # トークン
 COMMAND_PREFIX = os.getenv("TASUKUYA_COMMAND_PREFIX", COMMAND_PREFIX_DEFAULT)
 DISCORD_TOKEN = os.getenv("TASUKUYA_DISCORD_TOKEN", DISCORD_TOKEN_UNSETTED_DEFAULT)
 
 intents = discord.Intents.default()
-intents.message_content = True
 
 logger = logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +32,7 @@ logger = logging.basicConfig(
 
 async def _main() -> None:
     logger = logging.getLogger("tasukuya")
+    logger.info("Startup Successfully...")
 
     bot = commands.Bot(command_prefix=COMMAND_PREFIX, intents=intents)
 
@@ -40,6 +43,34 @@ async def _main() -> None:
         logger.info("Shutdown Successfully")
         stop_event.set()
 
+    @bot.event
+    async def on_ready() -> None:
+        await bot.tree.sync()
+        logger.info("Logged in as %s", bot.user)
+
+    @bot.tree.command(name="ping", description="ping")
+    async def ping(interaction: discord.Interaction) -> None:
+        try:
+            logger.info(
+                "Echo Request - User: %s - %s",
+                interaction.user.id,
+                interaction.user.name,
+            )
+            now = datetime.now(tz=ZoneInfo("Asia/Tokyo"))
+            await interaction.response.send_message(
+                f"Hello, {interaction.user.mention}. pong. ({now})",
+            )
+        except Exception as e:
+            logger.exception("An error occurred during ping command")
+            if DEBUG:
+                await interaction.response.send_message(
+                    f"Unexpected Error. [DEBUG]: {e}",
+                )
+            else:
+                await interaction.response.send_message(
+                    "Unexpected Error. Please contact service administrator.",
+                )
+
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, lambda: asyncio.create_task(stop()))
@@ -48,8 +79,7 @@ async def _main() -> None:
         logger.error("Discord Token is unset")
         sys.exit(1)
 
-    await bot.start()
-    logger.info("Startup Successfully")
+    await bot.start(token=DISCORD_TOKEN)
     await stop_event.wait()
 
 
