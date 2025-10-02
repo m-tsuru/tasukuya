@@ -5,36 +5,36 @@
 ## Implementation
 
 <details>
-<summary>- [x] /ping</summary>
+<summary>/ping</summary>
 ECHO Request
 </details>
 <details>
-<summary>- [] /setup PREFIX</summary>
+<summary>/setup PREFIX</summary>
 </details>
 <details>
-<summary>- [] /create TASK-NAME [due] [sub-task-following]</summary>
+<summary>/create TASK-NAME [due] [sub-task-following]</summary>
 </details>
 <details>
-<summary>- [] /open TASK-ID</summary>
+<summary>/open TASK-ID</summary>
 </details>
 <details>
-<summary>- [] /done TASK-ID</summary>
+<summary>/done TASK-ID</summary>
 </details>
 <details>
-<summary>- [] /delete TASK-ID</summary>
+<summary>/delete TASK-ID</summary>
 </details>
 <details>
-<summary>- [] /assign TASK-ID ASSIGNEE</summary>
+<summary>/assign TASK-ID ASSIGNEE</summary>
 </details>
 <details>
-<summary>- [] /reassign TASK-ID ASSIGNEE</summary>
+<summary>/reassign TASK-ID ASSIGNEE</summary>
 </details>
 <details>
-<summary>- [] /unassign TASK-ID ASSIGNEE</summary>
+<summary>/unassign TASK-ID ASSIGNEE</summary>
 </details>
 <details>
-<summary>- [] /reschedule TASK-ID due-date</summary>
+<summary>/reschedule TASK-ID due-date</summary>
 </details>
 <details>
-<summary>- [] /list [PREFIX]</summary>
+<summary>/list [PREFIX]</summary>
 </details>
