@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import func
 
@@ -20,7 +20,7 @@ class User(Base):
 
 class Guild(Base):
     __tablename__ = "guilds"
-    guild_id = Column(String, primary_key=True)
+    guild_id = Column(Integer, primary_key=True, autoincrement=True)
     guild_name = Column(String)
     create_user = Column(String, ForeignKey("users.user_id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -35,6 +35,7 @@ class TaskList(Base):
     id = Column(String, primary_key=True)
     guild_id = Column(String, ForeignKey("guilds.guild_id"))
     prefix = Column(String)
+    default = Column(Boolean)
 
     def __repr__(self) -> str:
         return super().__repr__()
@@ -42,7 +43,8 @@ class TaskList(Base):
 
 class Task(Base):
     __tablename__ = "tasks"
-    task_id = Column(String, primary_key=True)
+    task_list_id = Column(String, ForeignKey("tasklists.id"), primary_key=True)
+    task_id = Column(Integer, primary_key=True, autoincrement=True)
     task_name = Column(String)
     due_date = Column(DateTime(timezone=True))
     done_date = Column(DateTime(timezone=True))
