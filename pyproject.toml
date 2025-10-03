@@ -5,7 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "alembic>=1.16.5",
     "discord-py>=2.6.3",
     "python-dotenv>=1.1.1",
     "ruff[dev]>=0.13.1",
+    "sqlalchemy>=2.0.43",
 ]
