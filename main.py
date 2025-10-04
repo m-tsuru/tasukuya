@@ -55,6 +55,23 @@ async def _main() -> None:
         await bot.tree.sync()
         logger.info("Logged in as %s", bot.user)
 
+    @bot.event
+    async def on_guild_join(guild: discord.Guild) -> None:
+        logger.info("Joined guild: %s (id: %s)", guild.name, guild.id)
+        logger.info("Add Guild to Database")
+        try:
+            with SessionLocal() as session:
+                create_guild(
+                    session,
+                    guild_id=str(guild.id),
+                    guild_name=guild.name,
+                    create_user_id="0",
+                )
+        except Exception as e:
+            logger.exception("An error occurred while adding guild to database: %s", e)
+        else:
+            logger.info("Guild added to database successfully")
+
     @bot.tree.command(name="ping", description="ping")
     async def ping(interaction: discord.Interaction) -> None:
         try:
