@@ -4,6 +4,12 @@
 
 ## Implementation
 
+コマンドを列挙します．
+
+### Implemented
+
+実装済みのコマンドです．
+
 <details>
 <summary>/ping</summary>
 ECHO Request
@@ -11,11 +17,14 @@ ECHO Request
 <details>
 <summary>/setup PREFIX</summary>
 </details>
+
+### Not Implemented
+
+未実装のコマンドです．
+
+
 <details>
 <summary>/create TASK-NAME [due] [sub-task-following]</summary>
-</details>
-<details>
-<summary>/open TASK-ID</summary>
 </details>
 <details>
 <summary>/done TASK-ID</summary>
@@ -36,5 +45,5 @@ ECHO Request
 <summary>/reschedule TASK-ID due-date</summary>
 </details>
 <details>
-<summary>/list [PREFIX]</summary>
+<summary>/list [ASSIGNEE] [PREFIX]</summary>
 </details>
