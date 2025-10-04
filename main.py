@@ -9,6 +9,13 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from lib.operate import create_guild, create_tasklist, TasukuyaError
+
+engine = create_engine("sqlite:///./tasukuya.db", echo=True, future=True)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 load_dotenv()
 
