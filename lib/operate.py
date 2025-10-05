@@ -1,0 +1,235 @@
+import datetime
+from zoneinfo import ZoneInfo
+
+from sqlalchemy.orm import Session
+
+from lib.schema import Guild, Task, TaskList, User
+
+
+class TasukuyaError(Exception):
+    def __str__(self) -> str:
+        return "An Unexpected Error occurred in Tasukuya."
+
+
+class InvalidTaskIDError(Exception):
+    def __init__(self, value):
+        msg = f"Invalid task ID: the suffix after '-' in '{value}' is not a digit."
+        super().__init__(msg)
+
+
+def parse_task_id(task_id_like_strings: str) -> tuple[int | None, str]:
+    if "-" in task_id_like_strings:
+        results = task_id_like_strings.rsplit("-", 1)
+    else:
+        results = (None, task_id_like_strings)
+    if len(results) == 0:
+        msg = "Invalid task ID: input is empty"
+        raise ValueError(msg)
+    if not results[-1].isdigit():
+        msg = f"Invalid task ID: the suffix after '-' in '{task_id_like_strings}' is not a digit."
+        raise InvalidTaskIDError(task_id_like_strings)
+    return results
+
+
+def parse_date(
+    like_date_strings: str | None,
+    tz: ZoneInfo | None = None,
+) -> datetime.datetime:
+    if tz is None:
+        tz = ZoneInfo("Asia/Tokyo")
+    now = datetime.datetime.now(tz=tz)
+    if like_date_strings is None:
+        return now + datetime.datetime.timedelta(weeks=1)
+    if len(like_date_strings) == 4:  # noqa: PLR2004
+        dt_partial = datetime.datetime.strptime(like_date_strings, "%m%d")  # noqa: DTZ007
+        dt = datetime.datetime(
+            year=now.year,
+            month=dt_partial.month,
+            day=dt_partial.day,
+            hour=now.hour,
+            minute=now.minute,
+            second=now.second,
+            tzinfo=tz,
+        )
+    elif len(like_date_strings) == 8:  # noqa: PLR2004
+        dt_partial = datetime.datetime.strptime(like_date_strings, "%Y%m%d")  # noqa: DTZ007
+        dt = datetime.datetime(
+            year=dt_partial.year,
+            month=dt_partial.month,
+            day=dt_partial.day,
+            hour=now.hour,
+            minute=now.minute,
+            second=now.second,
+            tzinfo=tz,
+        )
+    elif len(like_date_strings) == 12:  # noqa: PLR2004
+        dt_partial = datetime.datetime.strptime(like_date_strings, "%Y%m%d%H%M")  # noqa: DTZ007
+        dt = datetime.datetime(
+            year=dt_partial.year,
+            month=dt_partial.month,
+            day=dt_partial.day,
+            hour=dt_partial.hour,
+            minute=dt_partial.minute,
+            second=0,
+            tzinfo=tz,
+        )
+    else:
+        msg = "Invalid Date Format"
+        raise ValueError(msg)
+    return dt
+
+
+def create_user_if_not_exists(db: Session, user_id: str, user_name: str) -> User:
+    """
+    If the user ID is not registered, create a new one;
+    if it exists, return it as is.
+    """
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if user is None:
+        user = User(user_id=user_id, user_name=user_name)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    return user
+
+
+def create_user(db: Session, user_id: str, user_name: str) -> User:
+    """
+    If the user ID is not registered, create a new one;
+    if it exists, return it as is.
+    """
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if user is None:
+        user = User(user_id=user_id, user_name=user_name)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    return user
+
+
+def create_guild(
+    db: Session,
+    guild_id: str,
+    guild_name: str,
+    create_user_id: str,
+) -> Guild:
+    """
+    If the Guild ID is not registered, create a new one;
+    if it exists, return it as is.
+    """
+    guild = db.query(Guild).filter(Guild.guild_id == guild_id).first()
+    if guild is None:
+        guild = Guild(
+            guild_id=guild_id,
+            guild_name=guild_name,
+            create_user=create_user_id,
+        )
+        db.add(guild)
+        db.commit()
+        db.refresh(guild)
+    return guild
+
+
+def get_tasklist(
+    db: Session,
+    guild_id: str,
+    prefix: str | None,
+) -> tuple[int, str] | None:
+    """
+    Retrieve the task list ID and prefix from the Guild ID.
+
+    If a prefix is specified, it returns the task list with the matching prefix from the
+    task lists associated with the guild ID. If no matching items are found,
+    it returns None.
+
+    If prefix is None, it will retrieve the default task list. If no matching items are
+    found, it returns None.
+    """
+    if prefix is None:
+        tasklist = (
+            db.query(TaskList)
+            .filter(
+                TaskList.guild_id == guild_id,
+                TaskList.default.is_(True),
+            )
+            .first()
+        )
+    else:
+        tasklist = (
+            db.query(TaskList)
+            .filter(
+                TaskList.guild_id == guild_id,
+                TaskList.prefix == prefix,
+            )
+            .first()
+        )
+    if tasklist is None:
+        return None
+    return tasklist.id, tasklist.prefix
+
+
+def create_tasklist(
+    db: Session,
+    guild_id: str,
+    prefix: str,
+) -> tuple[int, str]:
+    """
+    Create a new task list.
+
+    Before creating the task list, the `get_tasklist_prefix()` function determines the
+    following:
+    1. If duplicate task prefix exist within the same guild, an error will be returned.
+    2. If the specified guild does not have a task list with the index, create one with
+    the index flag set.
+    """
+
+    default = False
+    if get_tasklist(db, guild_id, prefix) is not None:
+        e = "TaskList with the same prefix already exists"
+        raise TasukuyaError(e)
+    if get_tasklist(db, guild_id, None) is None:
+        default = True
+
+    tl = TaskList(
+        guild_id=guild_id,
+        prefix=prefix,
+        default=default,
+    )
+
+    db.add(tl)
+    db.commit()
+    db.refresh(tl)
+    return tl.id, tl.prefix
+
+
+def create_task(
+    db: Session,
+    task_list_id: str,
+    task_name: str,
+    due_date: str | None = None,
+) -> Task:
+    """
+    Create a new task.
+
+    1. retrieve the largest value from the task list.
+    2. increment the value by 1 to get the next task ID.
+    3. create a new task with the next task ID.
+    """
+    max_task_id = (
+        db.query(Task)
+        .filter(Task.task_list_id == task_list_id)
+        .order_by(Task.task_id.desc())
+        .first()
+    )
+    next_task_id = 1 if max_task_id is None else max_task_id.task_id + 1
+
+    task = Task(
+        task_list_id=task_list_id,
+        task_id=next_task_id,
+        task_name=task_name,
+        due_date=parse_date(due_date),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
