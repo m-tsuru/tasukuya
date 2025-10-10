@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+  <object-set>
+    <schema path="main">
+      <view name="Task with Task Assignees" query="SELECT task_assignees.id, tasklists.prefix, tasks.task_id, tasks.task_name, users.user_name&#xa;FROM task_assignees&#xa;INNER JOIN tasklists ON task_assignees.task_list_id = tasklists.id&#xa;INNER JOIN users ON task_assignees.user_id = users.user_id&#xa;INNER JOIN tasks ON task_assignees.task_list_id = tasks.task_list_id AND task_assignees.task_id = tasks.task_id&#xa;"/>
+    </schema>
+  </object-set>
+</data>
