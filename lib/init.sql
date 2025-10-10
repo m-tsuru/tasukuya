@@ -41,10 +41,11 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 -- タスク担当者テーブル
 CREATE TABLE IF NOT EXISTS task_assignees (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY AUTOINCREMENT,
     task_list_id INTEGER,
     task_id INTEGER,
     user_id TEXT,
+    FOREIGN KEY (task_list_id) REFERENCES tasks (task_list_id),
     FOREIGN KEY (task_id) REFERENCES tasks (task_id),
     FOREIGN KEY (user_id) REFERENCES users (user_id)
 );
