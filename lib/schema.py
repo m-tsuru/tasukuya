@@ -1,5 +1,5 @@
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.sql import func
 
 
@@ -44,6 +44,7 @@ class TaskList(Base):
 class Task(Base):
     __tablename__ = "tasks"
     task_list_id = Column(String, ForeignKey("tasklists.id"), primary_key=True)
+    task_list = relationship("TaskList", backref="tasks")
     task_id = Column(Integer, primary_key=True)
     task_name = Column(String)
     due_date = Column(DateTime(timezone=True))
@@ -57,10 +58,11 @@ class Task(Base):
 
 class TaskAssignee(Base):
     __tablename__ = "task_assignees"
-    task_list_id = Column(String, primary_key=True)
-    id = Column(String, primary_key=True)
-    task_id = Column(String, ForeignKey("tasks.task_id"))
+    id = Column(Integer, autoincrement=True, primary_key=True)
+    task_list_id = Column(String, ForeignKey("tasks.task_list_id"))
+    task_id = Column(Integer, ForeignKey("tasks.task_id"))  # String -> Integer に変更
     user_id = Column(String, ForeignKey("users.user_id"))
+    user = relationship("User", backref="task_assignees")
 
     def __repr__(self) -> str:
         return super().__repr__()

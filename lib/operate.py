@@ -1,9 +1,10 @@
 import datetime
 from zoneinfo import ZoneInfo
 
+from discord import Member as DiscordMember, User as DiscordUser
 from sqlalchemy.orm import Session
 
-from lib.schema import Guild, Task, TaskList, User
+from lib.schema import Guild, Task, TaskAssignee, TaskList, User
 
 
 class TasukuyaError(Exception):
@@ -12,7 +13,7 @@ class TasukuyaError(Exception):
 
 
 class InvalidTaskIDError(Exception):
-    def __init__(self, value):
+    def __init__(self, value: str) -> None:
         msg = f"Invalid task ID: the suffix after '-' in '{value}' is not a digit."
         super().__init__(msg)
 
@@ -26,7 +27,7 @@ def parse_task_id(task_id_like_strings: str) -> tuple[int | None, str]:
         msg = "Invalid task ID: input is empty"
         raise ValueError(msg)
     if not results[-1].isdigit():
-        msg = f"Invalid task ID: the suffix after '-' in '{task_id_like_strings}' is not a digit."
+        msg = f"Invalid task ID: the suffix after '-' in '{task_id_like_strings}' is not a digit."  # noqa: E501
         raise InvalidTaskIDError(task_id_like_strings)
     return results
 
@@ -93,20 +94,6 @@ def create_user_if_not_exists(db: Session, user_id: str, user_name: str) -> User
     return user
 
 
-def create_user(db: Session, user_id: str, user_name: str) -> User:
-    """
-    If the user ID is not registered, create a new one;
-    if it exists, return it as is.
-    """
-    user = db.query(User).filter(User.user_id == user_id).first()
-    if user is None:
-        user = User(user_id=user_id, user_name=user_name)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
-
-
 def create_guild(
     db: Session,
     guild_id: str,
@@ -134,7 +121,7 @@ def get_tasklist(
     db: Session,
     guild_id: str,
     prefix: str | None,
-) -> tuple[int, str] | None:
+) -> tuple[int, str] | tuple[None, None]:
     """
     Retrieve the task list ID and prefix from the Guild ID.
 
@@ -164,7 +151,7 @@ def get_tasklist(
             .first()
         )
     if tasklist is None:
-        return None
+        return None, None
     return tasklist.id, tasklist.prefix
 
 
@@ -233,3 +220,75 @@ def create_task(
     db.commit()
     db.refresh(task)
     return task
+
+
+def get_task_with_assignees(
+    db: Session,
+    task_list_id: str,
+    task_id: int,
+) -> tuple[Task, list[User]] | tuple[None, list[None]]:
+    """指定したタスクとそのAssigneeユーザー一覧を返す"""
+    task = (
+        db.query(Task)
+        .filter(Task.task_list_id == task_list_id, Task.task_id == task_id)
+        .first()
+    )
+    if not task:
+        return None, []
+    assignees = (
+        db.query(User)
+        .join(TaskAssignee, User.user_id == TaskAssignee.user_id)
+        .filter(
+            TaskAssignee.task_list_id == task_list_id,
+            TaskAssignee.task_id == task_id,
+        )
+        .all()
+    )
+    return task, assignees
+
+
+def assign_user(
+    db: Session,
+    task_list_id: str | None,
+    task_id: int,  # str -> int に変更
+    assignees: list[DiscordUser | DiscordMember],
+    overwrite: bool = False,  # noqa: FBT001, FBT002
+) -> list[TaskAssignee]:
+    res = []
+    if overwrite:
+        deleted = (
+            db.query(TaskAssignee)
+            .filter(
+                TaskAssignee.task_list_id == task_list_id,
+                TaskAssignee.task_id == task_id,
+            )
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        db.refresh(deleted)
+    for u in assignees:
+        # ユーザ作成
+        user = create_user_if_not_exists(db, str(u.id), u.name)
+        # すでにアサインされていたら無視する
+        chk = (
+            db.query(TaskAssignee)
+            .filter(
+                TaskAssignee.task_list_id == task_list_id,
+                TaskAssignee.task_id == task_id,
+                TaskAssignee.user_id == str(u.id),
+            )
+            .first()
+        )
+        if chk is not None:
+            continue
+        assign = TaskAssignee(
+            task_list_id=task_list_id,
+            task_id=task_id,
+            user_id=user.user_id,
+        )
+        assign.user = user  # userオブジェクトを直接設定
+        db.add(assign)
+        db.commit()
+        db.refresh(assign)
+        res.append(assign)
+    return res

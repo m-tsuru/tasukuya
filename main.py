@@ -14,10 +14,13 @@ from sqlalchemy.orm import sessionmaker
 
 from lib.operate import (
     TasukuyaError,
+    assign_user,
     create_guild,
     create_task,
     create_tasklist,
+    get_task_with_assignees,
     get_tasklist,
+    parse_task_id,
 )
 
 engine = create_engine("sqlite:///./tasukuya.db", echo=True, future=True)
@@ -73,7 +76,7 @@ async def _main() -> None:
                     guild_name=guild.name,
                     create_user_id="0",
                 )
-        except Exception as e:
+        except Exception:
             logger.exception("An error occurred while adding guild to database")
         else:
             logger.info("Guild added to database successfully")
@@ -143,7 +146,7 @@ async def _main() -> None:
                     "Unexpected Error. Please contact service administrator.",
                 )
         else:
-            message = f"サーバ {interaction.guild.id} で リスト プレフィックス {prefix} を作成しました"
+            message = f"サーバ {interaction.guild.id} で リスト {prefix} を作成しました"
             logger.info(message)
             await interaction.response.send_message(message)
 
@@ -173,7 +176,7 @@ async def _main() -> None:
                     task_name,
                     due_date,
                 )
-            if get_tasklist is None:
+            if task_id is None:
                 logger.error("No matching task list was found.")
                 interaction.response.send_message("タスクリストが見つかりません")
         except ValueError as e:
@@ -195,6 +198,84 @@ async def _main() -> None:
             await interaction.response.send_message(
                 f"**[{task_prefix}-{task.task_id}] {task.task_name}** が登録されました",
                 embed=embed,
+            )
+
+    @bot.tree.command(name="assign", description="タスクにユーザをアサインします")
+    async def assign(
+        interaction: discord.Interaction,
+        task_id: str,
+        assignee: discord.User,
+    ) -> None:
+        try:
+            msg = "Assign Task Request:, "
+            msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+            msg += f"Task ID: {task_id}"
+            logger.info(msg)
+            t_prefix_like, t_id_like = parse_task_id(task_id)
+            with SessionLocal() as session:
+                task_list_id, task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    t_prefix_like,
+                )
+                if task_list_id is None:
+                    if t_prefix_like is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
+                    else:
+                        msg = "該当するタスクリストがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task, _ = get_task_with_assignees(session, task_list_id, t_id_like)
+                if task is None:
+                    msg = "該当するタスクがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+
+                # セッション内でタスク情報を取得
+                task_info = {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "due_date": task.due_date,
+                }
+
+                _ = assign_user(
+                    session,
+                    task_list_id,
+                    t_id_like,
+                    [assignee],  # assigneeをリストに変更
+                )
+                # 再取得
+                _, a = get_task_with_assignees(session, task_list_id, t_id_like)
+                if task is None:
+                    msg = "該当するタスクがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+
+                # セッション内でユーザー名を取得
+                task_assignees = " ".join(
+                    [f"@{i.user_name}" for i in a],
+                )
+            logger.info("Create Assign Successfully")
+            embed = discord.Embed(
+                title=f"[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}",  # noqa: E501
+                description="Assign Completed",
+                color=0x00FF00,
+            )
+            formatted_time = (
+                task_info["due_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["due_date"]
+                else "未設定"
+            )
+            embed.add_field(name="Assignees", value=task_assignees)
+            embed.add_field(name="Due Date", value=formatted_time)
+            embed.add_field(name="Done", value="Not yet")
+            await interaction.response.send_message(
+                f"**[{task_list_prefix}-{task_info['task_id']}] "
+                f"{task_info['task_name']}** に "
+                f"**{task_assignees}** がアサインされました",
+                embed=embed,
+            )
+        except Exception as e:
+            logger.exception("タスクのアサイン中にエラーが発生しました:")
+            await interaction.response.send_message(
+                f"タスクのアサイン中にエラーが発生しました: {e}",
             )
 
     loop = asyncio.get_running_loop()
