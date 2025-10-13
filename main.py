@@ -180,11 +180,13 @@ async def _main() -> None:
                 )
             if task_id is None:
                 logger.error("No matching task list was found.")
-                interaction.response.send_message("タスクリストが見つかりません")
+                await interaction.response.send_message("タスクリストが見つかりません")
+                return
         except ValueError as e:
             logger.exception("Failed to create the task:")
             await interaction.response.send_message(f"タスクの作成に失敗しました: {e}")
-        finally:
+        else:
+            # 成功時のみ embed を作成して送信
             logger.info("Create Task List Successfully")
             embed = discord.Embed(
                 title=f"[{task_prefix}-{task.task_id}] {task.task_name}",
