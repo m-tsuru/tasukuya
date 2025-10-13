@@ -20,6 +20,7 @@ from lib.operate import (
     create_tasklist,
     get_task_with_assignees,
     get_tasklist,
+    get_tasks,
     parse_task_id,
     unassign_user,
 )
@@ -351,6 +352,92 @@ async def _main() -> None:
             f"**[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}** から **{task_assignees or 'Not Assigned'}** にアサインされました",
             embed=embed,
         )
+
+    @bot.tree.command(name="list", description="タスク一覧を出力します")
+    async def list_tasks(
+        interaction: discord.Interaction,
+        task_list_prefix: discord.Optional[str] = None,
+        assignee: discord.User | None = None,
+        page: int = 1,
+        max_entries: int = 30,
+        order_by_due: bool = False,
+        is_done: bool = False,
+    ) -> None:
+        try:
+            msg = "List Tasks Request:, "
+            msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+            msg += f"Task List Prefix: {task_list_prefix}, "
+            msg += f"Assignee: {assignee}, "
+            msg += f"Page: {page}, "
+            msg += f"Order By Due: {order_by_due}, "
+            msg += f"Is Done: {is_done}"
+            logger.info(msg)
+            with SessionLocal() as session:
+                task_list_id, task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    task_list_prefix,
+                )
+                if task_list_id is None:
+                    if task_list_prefix is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
+                    else:
+                        msg = "一致するタスクリストがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                tasks, total_pages = get_tasks(
+                    session,
+                    task_list_id,
+                    str(assignee.id) if assignee else None,
+                    max_entries,
+                    page,
+                    order_by_due,
+                    is_done,
+                )
+                if not tasks:
+                    await interaction.response.send_message(
+                        "該当するタスクがありません",
+                    )
+                    return
+                embed = discord.Embed(
+                    title=f"Task List: {task_list_prefix}",
+                    description=f"Page {page} of {total_pages}",
+                    color=0x00FF00,
+                )
+                for task in tasks:
+                    # task は dict なのでキーでアクセス
+                    # セッション内で assignees を取得（User オブジェクトのリストが返る）
+                    _, assignees_list = get_task_with_assignees(
+                        session, task_list_id, task["task_id"]
+                    )
+                    assignees = (
+                        ", ".join([f"<@{a.user_id}>" for a in assignees_list])
+                        or "Not Assigned"
+                    )
+                    due_date = (
+                        task["due_date"].strftime("%Y/%m/%d %H:%M")
+                        if task["due_date"]
+                        else "未設定"
+                    )
+                    done_date = (
+                        task["done_date"].strftime("%Y/%m/%d %H:%M")
+                        if task["done_date"]
+                        else "Not yet"
+                    )
+                    embed.add_field(
+                        name=f"[{task_list_prefix}-{task['task_id']}] {task['task_name']}",
+                        value=(
+                            f"Assignees: {assignees}\n"
+                            f"Due Date: {due_date}\n"
+                            f"Done: {done_date}"
+                        ),
+                        inline=False,
+                    )
+            await interaction.response.send_message(embed=embed)
+        except Exception as e:
+            logger.exception("Failed to list tasks:")
+            await interaction.response.send_message(
+                f"タスクの一覧取得に失敗しました: {e}",
+            )
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

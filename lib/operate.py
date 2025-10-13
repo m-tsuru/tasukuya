@@ -2,6 +2,7 @@ import datetime
 from zoneinfo import ZoneInfo
 
 from discord import Member as DiscordMember, User as DiscordUser
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from lib.schema import Guild, Task, TaskAssignee, TaskList, User
@@ -40,7 +41,7 @@ def parse_date(
         tz = ZoneInfo("Asia/Tokyo")
     now = datetime.datetime.now(tz=tz)
     if like_date_strings is None:
-        return now + datetime.datetime.timedelta(weeks=1)
+        return now + datetime.timedelta(weeks=1)
     if len(like_date_strings) == 4:  # noqa: PLR2004
         dt_partial = datetime.datetime.strptime(like_date_strings, "%m%d")  # noqa: DTZ007
         dt = datetime.datetime(
@@ -245,6 +246,73 @@ def get_task_with_assignees(
         .all()
     )
     return task, assignees
+
+
+# ...existing code...
+def get_tasks(
+    db: Session,
+    task_list_id: int,
+    assignee: str | None,
+    max_entries: int = 30,
+    page: int = 1,
+    order_by_due_date: bool = True,
+    is_done: bool = False,
+) -> tuple[list[dict], int]:
+    """
+    Retrieve tasks with pagination and optional filtering by assignee and completion status.
+    Returns: (tasks, total_pages)
+    """
+    #
+
+    # 入力検証（0除算や負のページを防ぐ）
+    if not isinstance(max_entries, int) or max_entries <= 0:
+        raise ValueError("max_entries must be a positive integer")
+    if not isinstance(page, int) or page <= 0:
+        raise ValueError("page must be a positive integer")
+
+    base_q = db.query(Task).filter(Task.task_list_id == task_list_id)
+    if is_done:
+        base_q = base_q.filter(Task.done_date.is_not(None))
+    else:
+        base_q = base_q.filter(Task.done_date.is_(None))
+
+    if assignee is not None:
+        base_q = base_q.join(
+            TaskAssignee,
+            and_(
+                Task.task_list_id == TaskAssignee.task_list_id,
+                Task.task_id == TaskAssignee.task_id,
+            ),
+        ).filter(TaskAssignee.user_id == assignee)
+
+    # 総件数を先に取得（offset/limit 前）
+    total_count = base_q.order_by(None).count()
+    if order_by_due_date:
+        base_q = base_q.order_by(Task.due_date.asc().nulls_last(), Task.task_id.asc())
+    else:
+        base_q = base_q.order_by(Task.task_id.asc())
+
+    offset = (page - 1) * max_entries
+    tasks = base_q.offset(offset).limit(max_entries).all()
+
+    # プリミティブ化
+    tasks_dicts = [
+        {
+            "task_list_id": t.task_list_id,
+            "task_id": t.task_id,
+            "task_name": t.task_name,
+            "due_date": t.due_date,
+            "done_date": t.done_date,
+            "created_at": t.created_at,
+            "updated_at": t.updated_at,
+        }
+        for t in tasks
+    ]
+
+    total_pages = (
+        (total_count + max_entries - 1) // max_entries if total_count > 0 else 0
+    )
+    return tasks_dicts, total_pages
 
 
 def assign_user(
