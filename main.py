@@ -21,6 +21,7 @@ from lib.operate import (
     get_task_with_assignees,
     get_tasklist,
     parse_task_id,
+    unassign_user,
 )
 
 engine = create_engine("sqlite:///./tasukuya.db", echo=True, future=True)
@@ -181,7 +182,7 @@ async def _main() -> None:
                 interaction.response.send_message("タスクリストが見つかりません")
         except ValueError as e:
             logger.exception("Failed to create the task:")
-            interaction.response.send_message(f"タスクの作成に失敗しました: {e}")
+            await interaction.response.send_message(f"タスクの作成に失敗しました: {e}")
         finally:
             logger.info("Create Task List Successfully")
             embed = discord.Embed(
@@ -222,11 +223,11 @@ async def _main() -> None:
                     if t_prefix_like is None:
                         msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
                     else:
-                        msg = "該当するタスクリストがありません"
+                        msg = "一致するタスクリストがありません"
                     raise ValueError(msg)  # noqa: TRY301
                 task, _ = get_task_with_assignees(session, task_list_id, t_id_like)
                 if task is None:
-                    msg = "該当するタスクがありません"
+                    msg = "一致するタスクがありません"
                     raise ValueError(msg)  # noqa: TRY301
 
                 # セッション内でタスク情報を取得
@@ -236,21 +237,19 @@ async def _main() -> None:
                     "due_date": task.due_date,
                 }
 
-                _ = assign_user(
+                _, a = assign_user(
                     session,
                     task_list_id,
                     t_id_like,
                     [assignee],  # assigneeをリストに変更
                 )
-                # 再取得
-                _, a = get_task_with_assignees(session, task_list_id, t_id_like)
                 if task is None:
-                    msg = "該当するタスクがありません"
+                    msg = "一致するタスクがありません"
                     raise ValueError(msg)  # noqa: TRY301
 
                 # セッション内でユーザー名を取得
                 task_assignees = " ".join(
-                    [f"@{i.user_name}" for i in a],
+                    [f"<@{i.user_id}>" for i in a],
                 )
             logger.info("Create Assign Successfully")
             embed = discord.Embed(
@@ -277,6 +276,81 @@ async def _main() -> None:
             await interaction.response.send_message(
                 f"タスクのアサイン中にエラーが発生しました: {e}",
             )
+
+    @bot.tree.command(name="unassign", description="タスクからユーザを解放します")
+    async def unassign(
+        interaction: discord.Interaction,
+        task_id: str,
+        user: discord.User | None = None,
+    ) -> None:
+        try:
+            task_assignees = []
+            with SessionLocal() as session:
+                msg = "Unassign Task Request:, "
+                msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+                msg += f"Task ID: {task_id}"
+                logger.info(msg)
+                t_prefix_like, t_id_like = parse_task_id(task_id)
+                task_list_id, task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    t_prefix_like,
+                )
+                if task_list_id is None:
+                    if t_prefix_like is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"
+                    else:
+                        msg = "一致するタスクリストがありません"
+                    raise ValueError(msg)
+                if user is None:
+                    task, assignees = unassign_user(
+                        session,
+                        task_list_id,
+                        t_id_like,
+                        None,
+                    )
+                else:
+                    task, assignees = unassign_user(
+                        session,
+                        task_list_id,
+                        t_id_like,
+                        [user],
+                    )
+                if task is None:
+                    raise ValueError("一致するタスクがありません")
+                # セッション内で必要な task 情報を取り出しておく
+                task_info = {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "due_date": task.due_date,
+                }
+                task_assignees = " ".join([f"<@{i.user_id}>" for i in assignees])
+        except Exception as e:
+            logger.exception("Failed to unassign user from the task:")
+            await interaction.response.send_message(
+                f"タスクのアサイン解除に失敗しました: {e}",
+            )
+            return
+
+        # 成功時のレスポンス - session は閉じられているが task_info を使う
+        logger.info("Success to unassign user from the task")
+        embed = discord.Embed(
+            title=f"[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}",
+            description="Unassign Completed",
+            color=0x00FF00,
+        )
+        formatted_time = (
+            task_info["due_date"].strftime("%Y/%m/%d %H:%M")
+            if task_info["due_date"]
+            else "未設定"
+        )
+        embed.add_field(name="Due Date", value=formatted_time)
+        embed.add_field(name="Assignee", value=task_assignees or "Not Assigned")
+        embed.add_field(name="Done", value="Not yet")
+        await interaction.response.send_message(
+            f"**[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}** から **{task_assignees or 'Not Assigned'}** にアサインされました",
+            embed=embed,
+        )
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

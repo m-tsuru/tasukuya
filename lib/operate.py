@@ -253,10 +253,78 @@ def assign_user(
     task_id: int,  # str -> int に変更
     assignees: list[DiscordUser | DiscordMember],
     overwrite: bool = False,  # noqa: FBT001, FBT002
-) -> list[TaskAssignee]:
-    res = []
+) -> tuple[Task, list[User]] | tuple[None, list[None]]:
+    # assignees が単一オブジェクトで渡された場合に備える
+    if not isinstance(assignees, (list, tuple)):
+        assignees = [assignees]
+
+    # overwrite のときは既存割当を削除 - delete は件数を返すので refresh しない
     if overwrite:
-        deleted = (
+        db.query(TaskAssignee).filter(
+            TaskAssignee.task_list_id == task_list_id,
+            TaskAssignee.task_id == task_id,
+        ).delete(synchronize_session=False)
+        db.commit()
+
+    # 対象タスクの存在確認 - 先に取得しておく
+    task, _ = get_task_with_assignees(db, task_list_id, task_id)
+    if task is None:
+        return None, []
+
+    # 新しいアサインを追加
+    for u in assignees:
+        # ユーザ作成 - 既存なら取得
+        user = create_user_if_not_exists(
+            db,
+            str(u.id),
+            getattr(
+                u,
+                "name",
+                getattr(u, "display_name", str(u.id)),
+            ),
+        )
+        # すでにアサインされていたら無視
+        chk = (
+            db.query(TaskAssignee)
+            .filter(
+                TaskAssignee.task_list_id == task_list_id,
+                TaskAssignee.task_id == task_id,
+                TaskAssignee.user_id == user.user_id,
+            )
+            .first()
+        )
+        if chk is not None:
+            continue
+
+        assign = TaskAssignee(
+            task_list_id=task_list_id,
+            task_id=task_id,
+            user_id=user.user_id,
+        )
+        assign.user = user  # userオブジェクトを設定 - optional
+        db.add(assign)
+        db.commit()
+        db.refresh(assign)
+
+    # 最終的なタスクとアサイン済ユーザ一覧を返す
+    task, assignees_users = get_task_with_assignees(db, task_list_id, task_id)
+    return task, assignees_users
+
+
+def unassign_user(
+    db: Session,
+    task_list_id: str | None,
+    task_id: int,  # str -> int に変更
+    assignees: list[DiscordUser | DiscordMember] | None,
+) -> tuple[Task, list[User]] | tuple[None, list[None]]:
+    # 対象タスクの存在確認 - 先に取得しておく
+    task, _ = get_task_with_assignees(db, task_list_id, task_id)
+    if task is None:
+        return (None, [])
+
+    if assignees is None:
+        # assignees に None が指定されていたら、既存の assignees を削除
+        deleted_count = (
             db.query(TaskAssignee)
             .filter(
                 TaskAssignee.task_list_id == task_list_id,
@@ -265,30 +333,24 @@ def assign_user(
             .delete(synchronize_session=False)
         )
         db.commit()
-        db.refresh(deleted)
-    for u in assignees:
-        # ユーザ作成
-        user = create_user_if_not_exists(db, str(u.id), u.name)
-        # すでにアサインされていたら無視する
-        chk = (
+    else:
+        # 一致する assignees を削除
+        assignees_id = [i.id for i in assignees]
+        _ = (
             db.query(TaskAssignee)
             .filter(
                 TaskAssignee.task_list_id == task_list_id,
                 TaskAssignee.task_id == task_id,
-                TaskAssignee.user_id == str(u.id),
+                TaskAssignee.user_id.in_(assignees_id),
             )
-            .first()
+            .delete()
         )
-        if chk is not None:
-            continue
-        assign = TaskAssignee(
-            task_list_id=task_list_id,
-            task_id=task_id,
-            user_id=user.user_id,
-        )
-        assign.user = user  # userオブジェクトを直接設定
-        db.add(assign)
         db.commit()
-        db.refresh(assign)
-        res.append(assign)
-    return res
+
+    t, assignees = get_task_with_assignees(
+        db,
+        task_list_id,
+        task_id,
+    )
+
+    return t, assignees
