@@ -133,10 +133,11 @@ async def _main() -> None:
     ) -> None:
         try:
             logger.info(
-                "Setup Request - User: %s - %s on %s",
+                "Setup Request - User: %s - %s on %s, prefix: %s",
                 interaction.user.id,
                 interaction.user.global_name,
                 interaction.user.guild.id,
+                prefix,
             )
             with SessionLocal() as session:
                 guild = create_guild(
@@ -145,19 +146,19 @@ async def _main() -> None:
                     guild_name=interaction.guild.name,
                     create_user_id=str(interaction.user.id),
                 )
-                _ = create_tasklist(
+                logger.info("Guild created/retrieved: %s", guild.guild_id)
+                task_list = create_tasklist(
                     session,
                     guild_id=str(guild.guild_id),
                     prefix=prefix,
                 )
-            await interaction.response.send_message(
-                f"Create New Task List: {prefix}",
-            )
+                logger.info("Task list created: %s", task_list.id)
         except TasukuyaError as e:
-            logger.exception("An Excepted Error has occured")
+            logger.exception("Tasukuya Error occurred during setup")
             await interaction.response.send_message(f"エラー: {e}")
+            return
         except Exception as e:
-            logger.exception("An error occurred during setup command")
+            logger.exception("Unexpected error occurred during setup")
             if DEBUG:
                 await interaction.response.send_message(
                     f"Unexpected Error. [DEBUG]: {e}",
@@ -166,10 +167,12 @@ async def _main() -> None:
                 await interaction.response.send_message(
                     "Unexpected Error. Please contact service administrator.",
                 )
-        else:
-            message = f"サーバ {interaction.guild.id} で リスト {prefix} を作成しました"
-            logger.info(message)
-            await interaction.response.send_message(message)
+            return
+
+        # 成功時の処理
+        message = f"サーバ {interaction.guild.name} で リスト {prefix} を作成しました"
+        logger.info(message)
+        await interaction.response.send_message(message)
 
     @bot.tree.command(name="create", description="タスクを作成します")
     async def create(

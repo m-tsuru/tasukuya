@@ -160,34 +160,37 @@ def create_tasklist(
     db: Session,
     guild_id: str,
     prefix: str,
-) -> tuple[int, str]:
-    """
-    Create a new task list.
+    is_default: bool = False,  # noqa: FBT001, FBT002
+) -> TaskList:
+    """Create a new task list for the specified guild."""
+    try:
+        # 重複チェック
+        existing = (
+            db.query(TaskList)
+            .filter(TaskList.guild_id == guild_id, TaskList.prefix == prefix)
+            .first()
+        )
+        if existing is not None:
+            msg = f"Task list with prefix '{prefix}' already exists"
+            raise TasukuyaError(msg)
 
-    Before creating the task list, the `get_tasklist_prefix()` function determines the
-    following:
-    1. If duplicate task prefix exist within the same guild, an error will be returned.
-    2. If the specified guild does not have a task list with the index, create one with
-    the index flag set.
-    """
-
-    default = False
-    if get_tasklist(db, guild_id, prefix) is not None:
-        e = "TaskList with the same prefix already exists"
-        raise TasukuyaError(e)
-    if get_tasklist(db, guild_id, None) is None:
-        default = True
-
-    tl = TaskList(
-        guild_id=guild_id,
-        prefix=prefix,
-        default=default,
-    )
-
-    db.add(tl)
-    db.commit()
-    db.refresh(tl)
-    return tl.id, tl.prefix
+        task_list = TaskList(
+            guild_id=guild_id,
+            prefix=prefix,
+            default=is_default,
+        )
+        db.add(task_list)
+        db.commit()
+        db.refresh(task_list)
+    except TasukuyaError:
+        # TasukuyaErrorはそのまま再発生
+        raise
+    except Exception as e:
+        # 元の例外情報を保持してログに出力
+        db.rollback()
+        raise TasukuyaError(f"Failed to create task list: {e}") from e
+    else:
+        return task_list
 
 
 def create_task(
