@@ -25,6 +25,7 @@ from lib.operate import (
     mark_task_undone,
     parse_task_id,
     unassign_user,
+    delete_task,
 )
 
 engine = create_engine("sqlite:///./tasukuya.db", echo=True, future=True)
@@ -605,6 +606,68 @@ async def _main() -> None:
             logger.exception("Failed to list tasks:")
             await interaction.response.send_message(
                 f"タスクの一覧取得に失敗しました: {e}",
+            )
+
+    @bot.tree.command(name="delete", description="タスクを削除します")
+    async def delete(interaction: discord.Interaction, task_id: int):
+        try:
+            msg = "Delete Task Request:, "
+            msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+            msg += f"Task ID: {task_id}"
+            logger.info(msg)
+            t_prefix_like, t_id_like = parse_task_id(str(task_id))
+            with SessionLocal() as session:
+                task_list_id, task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    t_prefix_like,
+                )
+                if task_list_id is None:
+                    if t_prefix_like is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
+                    else:
+                        msg = "一致するタスクリストがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task = delete_task(
+                    session,
+                    task_list_id,
+                    t_id_like,
+                )
+                if task is None:
+                    msg = "一致するタスクがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task_info = {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "due_date": task.due_date,
+                    "done_date": task.done_date,
+                }
+            logger.info("Delete Task Successfully")
+            embed = discord.Embed(
+                title=f"[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}",  # noqa: E501
+                description="Marked as Undone",
+                color=0x00FF00,
+            )
+            formatted_due = (
+                task_info["due_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["due_date"]
+                else "未設定"
+            )
+            formatted_done = (
+                task_info["done_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["done_date"]
+                else "Not yet"
+            )
+            embed.add_field(name="Due Date", value=formatted_due)
+            embed.add_field(name="Done", value=formatted_done)
+            await interaction.response.send_message(
+                f"**[{task_list_prefix}-{t_id_like}]** を削除しました",
+                embed=embed,
+            )
+        except Exception as e:
+            logger.exception("Failed to delete the task:")
+            await interaction.response.send_message(
+                f"タスクの削除に失敗しました: {e}",
             )
 
     loop = asyncio.get_running_loop()

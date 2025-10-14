@@ -429,22 +429,15 @@ def mark_task_done(
     task_list_id: str | None,
     task_id: int,  # str -> int に変更
 ) -> tuple[Task, list[User]] | tuple[None, list[None]]:
-    task = (
-        db.query(Task)
-        .filter(Task.task_list_id == task_list_id, Task.task_id == task_id)
-        .first()
-    )
+    task, assignees = get_task_with_assignees(db, task_list_id, task_id)  # noqa: FBT001, FBT002
     if task is None:
         return None, []
     if task.done_date is not None:
-        task, assignees = get_task_with_assignees(db, task_list_id, task_id)
         return task, assignees
 
     task.done_date = datetime.datetime.now(tz=ZoneInfo("Asia/Tokyo"))
     db.commit()
     db.refresh(task)
-
-    task, assignees = get_task_with_assignees(db, task_list_id, task_id)  # noqa: FBT001, FBT002
 
     return task, assignees
 
@@ -454,20 +447,46 @@ def mark_task_undone(
     task_list_id: str | None,
     task_id: int,  # str -> int に変更
 ) -> tuple[Task, list[User]] | None:
-    task = (
-        db.query(Task)
-        .filter(Task.task_list_id == task_list_id, Task.task_id == task_id)
-        .first()
-    )
+    task, assignees = get_task_with_assignees(db, task_list_id, task_id)  # noqa: FBT001, FBT002
     if task is None:
         return None, []
     if task.done_date is None:
-        task, assignees = get_task_with_assignees(db, task_list_id, task_id)
         return task, assignees
 
     task.done_date = None
     db.commit()
     db.refresh(task)
 
-    task, assignees = get_task_with_assignees(db, task_list_id, task_id)  # noqa: FBT001, FBT002
     return task, assignees
+
+
+def delete_task(
+    db: Session,
+    task_list_id: str | None,
+    task_id: int,  # str -> int に変更
+) -> tuple[Task] | None:
+    task, _ = get_task_with_assignees(db, task_list_id, task_id)
+    if task is None:
+        return None
+    copy = Task(
+        task_list_id=task_list_id,
+        task_id=task_id,
+        task_name=task.task_name,
+        due_date=task.due_date,
+        done_date=task.done_date,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+    )
+
+    # まず関連する TaskAssignee を削除
+    db.query(TaskAssignee).filter(
+        TaskAssignee.task_list_id == task_list_id,
+        TaskAssignee.task_id == task_id,
+    ).delete(synchronize_session=False)
+    db.commit()
+
+    # 次に Task 自体を削除
+    db.delete(task)
+    db.commit()
+
+    return copy
