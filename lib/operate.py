@@ -2,7 +2,7 @@ import datetime
 from zoneinfo import ZoneInfo
 
 from discord import Member as DiscordMember, User as DiscordUser
-from sqlalchemy import and_, func
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from lib.schema import Guild, Task, TaskAssignee, TaskList, User
@@ -262,13 +262,13 @@ def get_tasks(
     Retrieve tasks with pagination and optional filtering by assignee and completion status.
     Returns: (tasks, total_pages)
     """
-    #
-
-    # 入力検証（0除算や負のページを防ぐ）
+    # 入力検証
     if not isinstance(max_entries, int) or max_entries <= 0:
-        raise ValueError("max_entries must be a positive integer")
+        msg = "max_entries must be a positive integer"
+        raise ValueError(msg)
     if not isinstance(page, int) or page <= 0:
-        raise ValueError("page must be a positive integer")
+        msg = "page must be a positive integer"
+        raise ValueError(msg)
 
     base_q = db.query(Task).filter(Task.task_list_id == task_list_id)
     if is_done:
@@ -285,7 +285,7 @@ def get_tasks(
             ),
         ).filter(TaskAssignee.user_id == assignee)
 
-    # 総件数を先に取得（offset/limit 前）
+    # 総件数を先に取得 - offset/limit 前
     total_count = base_q.order_by(None).count()
     if order_by_due_date:
         base_q = base_q.order_by(Task.due_date.asc().nulls_last(), Task.task_id.asc())
@@ -392,7 +392,7 @@ def unassign_user(
 
     if assignees is None:
         # assignees に None が指定されていたら、既存の assignees を削除
-        deleted_count = (
+        _ = (
             db.query(TaskAssignee)
             .filter(
                 TaskAssignee.task_list_id == task_list_id,
@@ -429,7 +429,7 @@ def mark_task_done(
     task_list_id: str | None,
     task_id: int,  # str -> int に変更
 ) -> tuple[Task, list[User]] | tuple[None, list[None]]:
-    task, assignees = get_task_with_assignees(db, task_list_id, task_id)  # noqa: FBT001, FBT002
+    task, assignees = get_task_with_assignees(db, task_list_id, task_id)
     if task is None:
         return None, []
     if task.done_date is not None:
@@ -447,7 +447,7 @@ def mark_task_undone(
     task_list_id: str | None,
     task_id: int,  # str -> int に変更
 ) -> tuple[Task, list[User]] | None:
-    task, assignees = get_task_with_assignees(db, task_list_id, task_id)  # noqa: FBT001, FBT002
+    task, assignees = get_task_with_assignees(db, task_list_id, task_id)
     if task is None:
         return None, []
     if task.done_date is None:

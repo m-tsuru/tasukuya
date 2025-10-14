@@ -18,6 +18,7 @@ from lib.operate import (
     create_guild,
     create_task,
     create_tasklist,
+    delete_task,
     get_task_with_assignees,
     get_tasklist,
     get_tasks,
@@ -25,7 +26,6 @@ from lib.operate import (
     mark_task_undone,
     parse_task_id,
     unassign_user,
-    delete_task,
 )
 
 engine = create_engine("sqlite:///./tasukuya.db", echo=True, future=True)
@@ -339,7 +339,8 @@ async def _main() -> None:
                         [user],
                     )
                 if task is None:
-                    raise ValueError("一致するタスクがありません")
+                    msg = "一致するタスクがありません"
+                    raise ValueError(msg)
                 # セッション内で必要な task 情報を取り出しておく
                 task_info = {
                     "task_id": task.task_id,
@@ -574,9 +575,11 @@ async def _main() -> None:
                 )
                 for task in tasks:
                     # task は dict なのでキーでアクセス
-                    # セッション内で assignees を取得（User オブジェクトのリストが返る）
+                    # セッション内で assignees を取得 - User オブジェクトのリストが返る
                     _, assignees_list = get_task_with_assignees(
-                        session, task_list_id, task["task_id"]
+                        session,
+                        task_list_id,
+                        task["task_id"],
                     )
                     assignees = (
                         ", ".join([f"<@{a.user_id}>" for a in assignees_list])
@@ -609,7 +612,10 @@ async def _main() -> None:
             )
 
     @bot.tree.command(name="delete", description="タスクを削除します")
-    async def delete(interaction: discord.Interaction, task_id: int):
+    async def delete(
+        interaction: discord.Interaction,
+        task_id: int,
+    ) -> None:
         try:
             msg = "Delete Task Request:, "
             msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
