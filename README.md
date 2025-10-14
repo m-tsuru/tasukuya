@@ -1,49 +1,67 @@
-# tasukuya
+# タスクやさん♪
 
-> （格言未定）
+タスクが売ってる。
 
-## Implementation
+## コマンドリファレンス
 
-コマンドを列挙します．
+### `/ping`: ガンを飛ばす
 
-### Implemented
+正常に タスクやさん が起動しているか試すことができます。
 
-実装済みのコマンドです．
+### `/setup`: ToDo リストをセットアップする
 
-<details>
-<summary>/ping</summary>
-ECHO Request
-</details>
-<details>
-<summary>/setup PREFIX</summary>
-</details>
+```
+/setup prefix
+```
 
-### Not Implemented
+タスクリストを作成します。
 
-未実装のコマンドです．
+サーバーで初めてのタスクリストが作成された場合、それがデフォルトのタスクリストになります。
 
+### `/create`: タスクを作る
 
-<details>
-<summary>/create TASK-NAME [due] [sub-task-following]</summary>
-</details>
-<details>
-<summary>/done TASK-ID</summary>
-</details>
-<details>
-<summary>/delete TASK-ID</summary>
-</details>
-<details>
-<summary>/assign TASK-ID ASSIGNEE</summary>
-</details>
-<details>
-<summary>/reassign TASK-ID ASSIGNEE</summary>
-</details>
-<details>
-<summary>/unassign TASK-ID ASSIGNEE</summary>
-</details>
-<details>
-<summary>/reschedule TASK-ID due-date</summary>
-</details>
-<details>
-<summary>/list [ASSIGNEE] [PREFIX]</summary>
-</details>
+```
+/create task_name [due_date] [task_list_prefix]
+```
+
+タスクを作成することができます。
+
+#### 引数
+
+- task_name: タスクの名前
+
+- due_date: [非必須] 締切日
+    入力形式は [日付](#日付) を参照してください。
+    入力されなかった場合、今から 1 週間後を指定します。
+
+- task_list_prefix: 保存先タスクリストのプレフィックス
+    - タスクを保存するタスクリストのプレフィックスを設定します
+    - 空の場合、サーバでデフォルトのタスクリストに追加されます
+    - サーバにタスクリストが存在しない場合、エラーを返します
+
+## 特殊な入力形式
+
+一部の引数は、特殊な入力形式をとります。
+
+### 日付
+
+Discord のコマンド引数には、日付を入力する形がないので、文字列で代用します。
+
+- `MMDD`
+    4 桁の半角数字を入力すると、同年 MM 月 DD 日の形で解釈します
+- `MMDDf`
+    4 桁の半角数字に f を入力すると 同年 MM 月 DD 日 23 時 59 分 の形で解釈します
+- `YYYYMMDD`
+    8 桁の半角数字を入力すると YYYY 年 MM 月 DD 日 00 時 00 分の形で解釈します
+- `YYYYMMDDHHmm`
+    12 桁の半角数字を入力すると YYYY 年 MM 月 DD 日 HH 時 mm 分の形で解釈します
+
+上記の形式に一致しない時、エラーを返します。
+
+### タスク ID
+
+タスク ID は `XXX-123` のような形式をとります。
+
+このうち、XXX は プレフィックスで、123 はタスクの通し番号です
+
+タスク ID を入力する時、単に「123」のようにプレフィックスを入力しない形をとった場合、タスクはサーバーのデフォルトのタスクリストに追加されます。
