@@ -428,39 +428,46 @@ def mark_task_done(
     db: Session,
     task_list_id: str | None,
     task_id: int,  # str -> int に変更
-) -> Task | None:
+) -> tuple[Task, list[User]] | tuple[None, list[None]]:
     task = (
         db.query(Task)
         .filter(Task.task_list_id == task_list_id, Task.task_id == task_id)
         .first()
     )
     if task is None:
-        return None
+        return None, []
     if task.done_date is not None:
-        return task
+        task, assignees = get_task_with_assignees(db, task_list_id, task_id)
+        return task, assignees
 
     task.done_date = datetime.datetime.now(tz=ZoneInfo("Asia/Tokyo"))
     db.commit()
     db.refresh(task)
-    return task
+
+    task, assignees = get_task_with_assignees(db, task_list_id, task_id)  # noqa: FBT001, FBT002
+
+    return task, assignees
 
 
 def mark_task_undone(
     db: Session,
     task_list_id: str | None,
     task_id: int,  # str -> int に変更
-) -> Task | None:
+) -> tuple[Task, list[User]] | None:
     task = (
         db.query(Task)
         .filter(Task.task_list_id == task_list_id, Task.task_id == task_id)
         .first()
     )
     if task is None:
-        return None
+        return None, []
     if task.done_date is None:
-        return task
+        task, assignees = get_task_with_assignees(db, task_list_id, task_id)
+        return task, assignees
 
     task.done_date = None
     db.commit()
     db.refresh(task)
-    return task
+
+    task, assignees = get_task_with_assignees(db, task_list_id, task_id)  # noqa: FBT001, FBT002
+    return task, assignees
