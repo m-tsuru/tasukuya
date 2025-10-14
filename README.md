@@ -2,13 +2,11 @@
 
 タスクが売ってる。
 
-## コマンドリファレンス
-
-### `/ping`: ガンを飛ばす
+## `/ping`: ガンを飛ばす
 
 正常に タスクやさん が起動しているか試すことができます。
 
-### `/setup`: ToDo リストをセットアップする
+## `/setup`: ToDo リストをセットアップする
 
 ```
 /setup prefix
@@ -18,7 +16,7 @@
 
 サーバーで初めてのタスクリストが作成された場合、それがデフォルトのタスクリストになります。
 
-### `/create`: タスクを作る
+## `/create`: タスクを作る
 
 ```
 /create task_name [due_date] [task_list_prefix]
@@ -39,7 +37,7 @@
     - 空の場合、サーバでデフォルトのタスクリストに追加されます
     - サーバにタスクリストが存在しない場合、エラーを返します
 
-### `/assign`: タスクにユーザを割り当てる
+## `/assign`: タスクにユーザを割り当てる
 
 ```
 /assign task_id assignee [overwrite]
@@ -53,7 +51,7 @@
 - assignee: 割り当てるユーザ
 - overwrite: [非必須] 既存の担当者を上書きするかどうか（デフォルト: false）
 
-### `/unassign`: タスクからユーザを外す
+## `/unassign`: タスクからユーザを外す
 
 ```
 /unassign task_id [user]
@@ -66,7 +64,7 @@
 - task_id: 対象のタスク ID（[タスク ID](#タスク-id) の形式）
 - user: [非必須] 解除するユーザ（指定しない場合、全ての担当者を解除）
 
-### `/list`: タスク一覧を表示する
+## `/list`: タスク一覧を表示する
 
 ```
 /list [task_list_prefix] [page] [assignee] [max_entries] [order_by_due_date] [is_done]
@@ -83,7 +81,7 @@
 - order_by_due_date: [非必須] 締切日順で並び替えるかどうか（デフォルト: true）
 - is_done: [非必須] 完了したタスクを表示するかどうか（デフォルト: false）
 
-### `/done`: タスクを完了にする
+## `/done`: タスクを完了にする
 
 ```
 /done task_id
@@ -95,7 +93,7 @@
 
 - task_id: 対象のタスク ID（[タスク ID](#タスク-id) の形式）
 
-### `/undone`: タスクを未完了に戻す
+## `/undone`: タスクを未完了に戻す
 
 ```
 /undone task_id
@@ -107,7 +105,7 @@
 
 - task_id: 対象のタスク ID（[タスク ID](#タスク-id) の形式）
 
-### `/rename`: タスク名を変更する
+## `/rename`: タスク名を変更する
 
 ```
 /rename task_id new_name
@@ -120,7 +118,7 @@
 - task_id: 対象のタスク ID（[タスク ID](#タスク-id) の形式）
 - new_name: 新しいタスク名
 
-### `/reschedule`: タスクの締切を変更する
+## `/reschedule`: タスクの締切を変更する
 
 ```
 /reschedule task_id new_due_date
@@ -133,7 +131,7 @@
 - task_id: 対象のタスク ID（[タスク ID](#タスク-id) の形式）
 - new_due_date: 新しい締切日（[日付](#日付) の形式）
 
-### `/clone`: タスクを複製する
+## `/clone`: タスクを複製する
 
 ```
 /clone task_id [new_task_name] [new_due_date]
@@ -147,7 +145,7 @@
 - new_task_name: [非必須] 新しいタスクの名前（指定しない場合、元のタスク名に「(Copy)」が追加される）
 - new_due_date: [非必須] 新しい締切日（[日付](#日付) の形式）
 
-### `/delete`: タスクを削除する
+## `/delete`: タスクを削除する
 
 ```
 /delete task_id
