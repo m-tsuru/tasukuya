@@ -21,12 +21,20 @@ from lib.operate import (
     get_task_with_assignees,
     get_tasklist,
     get_tasks,
+    mark_task_done,
+    mark_task_undone,
     parse_task_id,
     unassign_user,
 )
 
 engine = create_engine("sqlite:///./tasukuya.db", echo=True, future=True)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+    expire_on_commit=False,
+    future=True,
+)
 
 load_dotenv()
 
@@ -41,11 +49,21 @@ DISCORD_TOKEN = os.getenv("TASUKUYA_DISCORD_TOKEN", DISCORD_TOKEN_UNSETTED_DEFAU
 
 intents = discord.Intents.default()
 
-logger = logging.basicConfig(
+logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[logging.FileHandler("app.log"), logging.StreamHandler()],
 )
+# module-level logger
+logger = logging.getLogger("tasukuya")
+logger.setLevel(logging.INFO)
+
+
+def format_dt(dt: datetime | None) -> str:
+    """Format datetime for display in embeds."""
+    if dt is None:
+        return "未設定"
+    return dt.strftime("%Y/%m/%d %H:%M")
 
 
 async def _main() -> None:
@@ -354,6 +372,154 @@ async def _main() -> None:
             f"**[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}** から **{task_assignees or 'Not Assigned'}** にアサインされました",
             embed=embed,
         )
+
+    @bot.tree.command(name="done", description="タスクを完了済みにします")
+    async def done(
+        interaction: discord.Interaction,
+        task_id: str,
+    ) -> None:
+        try:
+            msg = "Mark Task Done Request:, "
+            msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+            msg += f"Task ID: {task_id}"
+            logger.info(msg)
+            t_prefix_like, t_id_like = parse_task_id(task_id)
+            with SessionLocal() as session:
+                task_list_id, task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    t_prefix_like,
+                )
+                if task_list_id is None:
+                    if t_prefix_like is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
+                    else:
+                        msg = "一致するタスクリストがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task, assignees = mark_task_done(
+                    session,
+                    task_list_id,
+                    t_id_like,
+                )
+                if task is None:
+                    msg = "一致するタスクがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+
+                # セッション内でタスク情報を取得
+                task_info = {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "due_date": task.due_date,
+                    "done_date": task.done_date,
+                }
+
+                # セッション内でユーザー名を取得
+                task_assignees = " ".join(
+                    [f"<@{i.user_id}>" for i in assignees],
+                )
+            logger.info("Mark Task Done Successfully")
+            embed = discord.Embed(
+                title=f"[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}",  # noqa: E501
+                description="Marked as Done",
+                color=0x00FF00,
+            )
+            formatted_due = (
+                task_info["due_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["due_date"]
+                else "未設定"
+            )
+            formatted_done = (
+                task_info["done_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["done_date"]
+                else "Not yet"
+            )
+            embed.add_field(name="Assignees", value=task_assignees or "Not Assigned")
+            embed.add_field(name="Due Date", value=formatted_due)
+            embed.add_field(name="Done", value=formatted_done)
+            await interaction.response.send_message(
+                f"**[{task_list_prefix}-{task_info['task_id']}] "
+                f"{task_info['task_name']}** を完了済みにしました",
+                embed=embed,
+            )
+        except Exception as e:
+            logger.exception("Failed to mark task as done:")
+            await interaction.response.send_message(
+                f"タスクの完了済みへの変更に失敗しました: {e}",
+            )
+
+    @bot.tree.command(name="undone", description="タスクを未完了にします")
+    async def undone(
+        interaction: discord.Interaction,
+        task_id: str,
+    ) -> None:
+        try:
+            msg = "Mark Task Undone Request:, "
+            msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+            msg += f"Task ID: {task_id}"
+            logger.info(msg)
+            t_prefix_like, t_id_like = parse_task_id(task_id)
+            with SessionLocal() as session:
+                task_list_id, task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    t_prefix_like,
+                )
+                if task_list_id is None:
+                    if t_prefix_like is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
+                    else:
+                        msg = "一致するタスクリストがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task, assignees = mark_task_undone(
+                    session,
+                    task_list_id,
+                    t_id_like,
+                )
+                if task is None:
+                    msg = "一致するタスクがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+
+                # セッション内でタスク情報を取得
+                task_info = {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "due_date": task.due_date,
+                    "done_date": task.done_date,
+                }
+
+                # セッション内でユーザー名を取得
+                task_assignees = " ".join(
+                    [f"<@{i.user_id}>" for i in assignees],
+                )
+            logger.info("Mark Task Undone Successfully")
+            embed = discord.Embed(
+                title=f"[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}",  # noqa: E501
+                description="Marked as Undone",
+                color=0x00FF00,
+            )
+            formatted_due = (
+                task_info["due_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["due_date"]
+                else "未設定"
+            )
+            formatted_done = (
+                task_info["done_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["done_date"]
+                else "Not yet"
+            )
+            embed.add_field(name="Assignees", value=task_assignees or "Not Assigned")
+            embed.add_field(name="Due Date", value=formatted_due)
+            embed.add_field(name="Done", value=formatted_done)
+            await interaction.response.send_message(
+                f"**[{task_list_prefix}-{task_info['task_id']}] "
+                f"{task_info['task_name']}** を未完了にしました",
+                embed=embed,
+            )
+        except Exception as e:
+            logger.exception("Failed to mark task as undone:")
+            await interaction.response.send_message(
+                f"タスクの未完了への変更に失敗しました: {e}",
+            )
 
     @bot.tree.command(name="list", description="タスク一覧を出力します")
     async def list_tasks(
