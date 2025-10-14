@@ -26,6 +26,8 @@ from lib.operate import (
     mark_task_done,
     mark_task_undone,
     parse_task_id,
+    rename_task,
+    reschedule_task,
     unassign_user,
 )
 
@@ -690,6 +692,144 @@ async def _main() -> None:
             logger.exception("Failed to delete the task:")
             await interaction.response.send_message(
                 f"タスクの削除に失敗しました: {e}",
+            )
+
+    @bot.tree.command(name="rename", description="タスク名を変更します")
+    async def rename(
+        interaction: discord.Interaction,
+        task_id: str,
+        new_name: str,
+    ) -> None:
+        try:
+            msg = "Rename Task Request:, "
+            msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+            msg += f"Task ID: {task_id}, "
+            msg += f"New Name: {new_name}"
+            logger.info(msg)
+            t_prefix_like, t_id_like = parse_task_id(task_id)
+            with SessionLocal() as session:
+                task_list_id, task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    t_prefix_like,
+                )
+                if task_list_id is None:
+                    if t_prefix_like is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
+                    else:
+                        msg = "一致するタスクリストがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task, _ = rename_task(
+                    session,
+                    task_list_id,
+                    t_id_like,
+                    new_name,
+                )
+                if task is None:
+                    msg = "一致するタスクがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task_info = {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "due_date": task.due_date,
+                    "done_date": task.done_date,
+                }
+            logger.info("Rename Task Successfully")
+            embed = discord.Embed(
+                title=f"[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}",  # noqa: E501
+                description="Renamed Task",
+                color=0x00FF00,
+            )
+            formatted_due = (
+                task_info["due_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["due_date"]
+                else "未設定"
+            )
+            formatted_done = (
+                task_info["done_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["done_date"]
+                else "Not yet"
+            )
+            embed.add_field(name="Due Date", value=formatted_due)
+            embed.add_field(name="Done", value=formatted_done)
+            await interaction.response.send_message(
+                f"**[{task_list_prefix}-{task_info['task_id']}]** の名前を変更しました",
+                embed=embed,
+            )
+            logger.info("Rename Task Successfully")
+        except Exception as e:
+            logger.exception("Failed to rename the task:")
+            await interaction.response.send_message(
+                f"タスクの名前変更に失敗しました: {e}",
+            )
+
+    @bot.tree.command(name="reschedule", description="タスクの期限を変更します")
+    async def reschedule(
+        interaction: discord.Interaction,
+        task_id: str,
+        new_due_date: discord.Optional[str] = None,
+    ) -> None:
+        try:
+            msg = "Reschedule Task Request:, "
+            msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+            msg += f"Task ID: {task_id}, "
+            msg += f"New Due Date: {new_due_date}"
+            logger.info(msg)
+            t_prefix_like, t_id_like = parse_task_id(task_id)
+            with SessionLocal() as session:
+                task_list_id, task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    t_prefix_like,
+                )
+                if task_list_id is None:
+                    if t_prefix_like is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
+                    else:
+                        msg = "一致するタスクリストがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task, _ = reschedule_task(
+                    session,
+                    task_list_id,
+                    t_id_like,
+                    new_due_date,
+                )
+                if task is None:
+                    msg = "一致するタスクがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task_info = {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "due_date": task.due_date,
+                    "done_date": task.done_date,
+                }
+            logger.info("Reschedule Task Successfully")
+            embed = discord.Embed(
+                title=f"[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}",  # noqa: E501
+                description="Rescheduled Task",
+                color=0x00FF00,
+            )
+            formatted_due = (
+                task_info["due_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["due_date"]
+                else "未設定"
+            )
+            formatted_done = (
+                task_info["done_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["done_date"]
+                else "Not yet"
+            )
+            embed.add_field(name="Due Date", value=formatted_due)
+            embed.add_field(name="Done", value=formatted_done)
+            await interaction.response.send_message(
+                f"**[{task_list_prefix}-{task_info['task_id']}]** の期限を変更しました",
+                embed=embed,
+            )
+            logger.info("Reschedule Task Successfully")
+        except Exception as e:
+            logger.exception("Failed to reschedule the task:")
+            await interaction.response.send_message(
+                f"タスクの期限変更に失敗しました: {e}",
             )
 
     @bot.tree.command(name="clone", description="タスクをクローンします")

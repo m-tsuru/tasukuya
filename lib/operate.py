@@ -48,20 +48,35 @@ def parse_date(
             year=now.year,
             month=dt_partial.month,
             day=dt_partial.day,
-            hour=now.hour,
-            minute=now.minute,
-            second=now.second,
+            hour=0,
+            minute=0,
+            second=0,
             tzinfo=tz,
         )
+    elif len(like_date_strings) == 5:  # noqa: PLR2004
+        if like_date_strings[4] == "f":
+            dt_partial = datetime.datetime.strptime(like_date_strings[0:3], "%m%d")  # noqa: DTZ007
+            dt = datetime.datetime(
+                year=now.year,
+                month=dt_partial.month,
+                day=dt_partial.day,
+                hour=23,
+                minute=59,
+                second=59,
+                tzinfo=tz,
+            )
+        else:
+            msg = "Invalid Date Format"
+            raise ValueError(msg)
     elif len(like_date_strings) == 8:  # noqa: PLR2004
         dt_partial = datetime.datetime.strptime(like_date_strings, "%Y%m%d")  # noqa: DTZ007
         dt = datetime.datetime(
             year=dt_partial.year,
             month=dt_partial.month,
             day=dt_partial.day,
-            hour=now.hour,
-            minute=now.minute,
-            second=now.second,
+            hour=0,
+            minute=0,
+            second=0,
             tzinfo=tz,
         )
     elif len(like_date_strings) == 12:  # noqa: PLR2004
@@ -537,3 +552,33 @@ def clone_task(
         )
 
     return new_task, result_assignees
+
+
+def reschedule_task(
+    db: Session,
+    task_list_id: str | None,
+    task_id: int,  # str -> int に変更
+    new_due_date: str | None = None,
+) -> tuple[Task, list[User]] | tuple[None, list[None]]:
+    task, assignees = get_task_with_assignees(db, task_list_id, task_id)
+    if task is None:
+        return None, []
+    task.due_date = parse_date(new_due_date)
+    db.commit()
+    db.refresh(task)
+    return task, assignees
+
+
+def rename_task(
+    db: Session,
+    task_list_id: str | None,
+    task_id: int,  # str -> int に変更
+    new_task_name: str,
+) -> tuple[Task, list[User]] | tuple[None, list[None]]:
+    task, assignees = get_task_with_assignees(db, task_list_id, task_id)
+    if task is None:
+        return None, []
+    task.task_name = new_task_name
+    db.commit()
+    db.refresh(task)
+    return task, assignees
