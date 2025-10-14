@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from lib.operate import (
     TasukuyaError,
     assign_user,
+    clone_task,
     create_guild,
     create_task,
     create_tasklist,
@@ -690,6 +691,84 @@ async def _main() -> None:
             await interaction.response.send_message(
                 f"タスクの削除に失敗しました: {e}",
             )
+
+    @bot.tree.command(name="clone", description="タスクをクローンします")
+    async def clone(
+        interaction: discord.Interaction,
+        task_id: str,
+        target_task_list_id: str | None,
+    ) -> None:
+        try:
+            msg = "Clone Task Request:, "
+            msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+            msg += f"Task ID: {task_id}, "
+            msg += f"Target Task List ID: {target_task_list_id}"
+            logger.info(msg)
+            t_prefix_like, t_id_like = parse_task_id(task_id)
+            with SessionLocal() as session:
+                source_task_list_id, source_task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    t_prefix_like,
+                )
+                if source_task_list_id is None:
+                    if t_prefix_like is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
+                    else:
+                        msg = "一致するタスクリストがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                if target_task_list_id is None:
+                    target_task_list_id = source_task_list_id
+                task, assignees = clone_task(
+                    session,
+                    source_task_list_id,
+                    t_id_like,
+                    target_task_list_id,
+                    [interaction.user],
+                )
+                if task is None:
+                    msg = "一致するタスクがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+
+                # セッション内でタスク情報を取得
+                task_info = {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "due_date": task.due_date,
+                }
+
+                # セッション内でユーザー名を取得
+                task_assignees = " ".join(
+                    [f"<@{i.user_id}>" for i in assignees],
+                )
+            logger.info("Clone Task Successfully")
+            embed = discord.Embed(
+                title=f"[{source_task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}",  # noqa: E501
+                description="Cloned Task",
+                color=0x00FF00,
+            )
+            formatted_time = (
+                task_info["due_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["due_date"]
+                else "未設定"
+            )
+            embed.add_field(name="Due Date", value=formatted_time)
+            embed.add_field(
+                name="Assignee",
+                value=task_assignees if task_assignees else "Not Assigned",
+            )
+            embed.add_field(name="Done", value="Not yet")
+            await interaction.response.send_message(
+                f"**[{source_task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}** がクローンされました",  # noqa: E501
+                embed=embed,
+            )
+        except Exception as e:
+            logger.exception("Failed to clone the task:")
+            await interaction.response.send_message(
+                f"タスクのクローンに失敗しました: {e}",
+            )
+            msg = "Failed to clone the task:"
+            logger.exception(msg)
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

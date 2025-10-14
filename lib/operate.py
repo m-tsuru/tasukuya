@@ -498,3 +498,40 @@ def delete_task(
     db.commit()
 
     return copy
+
+
+def clone_task(
+    db: Session,
+    source_task_list_id: str | None,
+    source_task_id: int,  # str -> int に変更
+    target_task_list_id: str | None,
+    assignees: list[DiscordUser | DiscordMember],
+) -> tuple[Task, list[User]] | tuple[None, list[None]]:
+    source_task, _ = get_task_with_assignees(
+        db,
+        source_task_list_id,
+        source_task_id,
+    )
+    if source_task is None:
+        return None, []
+    new_task = create_task(
+        db,
+        target_task_list_id,
+        source_task.task_name + " (cloned)",
+        source_task.due_date.strftime("%Y%m%d%H%M")
+        if source_task.due_date is not None
+        else None,
+    )
+    if len(assignees) == 0:
+        return new_task, []
+
+    for assignee in assignees:
+        _, result_assignees = assign_user(
+            db,
+            target_task_list_id,
+            new_task.task_id,
+            [assignee],
+            False,
+        )
+
+    return new_task, result_assignees
