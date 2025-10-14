@@ -174,6 +174,11 @@ def create_tasklist(
             msg = f"Task list with prefix '{prefix}' already exists"
             raise TasukuyaError(msg)
 
+        # はじめてのリストかチェック
+        is_first = db.query(TaskList).filter(TaskList.guild_id == guild_id).first()
+        if is_first is not None:
+            is_default = True
+
         task_list = TaskList(
             guild_id=guild_id,
             prefix=prefix,
