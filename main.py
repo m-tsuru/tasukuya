@@ -697,6 +697,7 @@ async def _main() -> None:
         interaction: discord.Interaction,
         task_id: str,
         target_task_list_id: str | None,
+        task_name_suffix: discord.Optional[str] = None,
     ) -> None:
         try:
             msg = "Clone Task Request:, "
@@ -724,6 +725,9 @@ async def _main() -> None:
                     source_task_list_id,
                     t_id_like,
                     target_task_list_id,
+                    f" (cloned by {interaction.user.global_name})"
+                    if task_name_suffix is None
+                    else " (" + task_name_suffix + ")",
                     [interaction.user],
                 )
                 if task is None:
