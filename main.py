@@ -189,26 +189,32 @@ async def _main() -> None:
             msg += f"Task Due Date: {due_date}"
             logger.info(msg)
             with SessionLocal() as session:
-                task_id, task_prefix = get_tasklist(
+                task_list_id, task_prefix = get_tasklist(
                     session,
                     str(interaction.user.guild.id),
                     task_list_prefix,
                 )
+                if task_list_id is None:
+                    logger.error("No matching task list was found.")
+                    await interaction.response.send_message(
+                        "タスクリストが見つかりません",
+                    )
+                    return
                 task = create_task(
                     session,
-                    task_id,
+                    task_list_id,
                     task_name,
                     due_date,
                 )
-            if task_id is None:
-                logger.error("No matching task list was found.")
-                await interaction.response.send_message("タスクリストが見つかりません")
-                return
-        except ValueError as e:
-            logger.exception("Failed to create the task:")
-            await interaction.response.send_message(f"タスクの作成に失敗しました: {e}")
-        else:
-            # 成功時のみ embed を作成して送信
+                task, assignees = assign_user(
+                    session,
+                    task_list_id,
+                    task.task_id,
+                    [interaction.user],
+                    False,
+                )
+                assignees_text = " ".join([f"<@{i.user_id}>" for i in assignees])
+                # 成功時のみ embed を作成して送信
             logger.info("Create Task List Successfully")
             embed = discord.Embed(
                 title=f"[{task_prefix}-{task.task_id}] {task.task_name}",
@@ -219,12 +225,18 @@ async def _main() -> None:
                 task.due_date.strftime("%Y/%m/%d %H:%M") if task.due_date else "未設定"
             )
             embed.add_field(name="Due Date", value=formatted_time)
-            embed.add_field(name="Assignee", value="Not Assigned")
+            embed.add_field(
+                name="Assignee",
+                value=assignees_text if assignees_text else "Not Assigned",
+            )
             embed.add_field(name="Done", value="Not yet")
             await interaction.response.send_message(
                 f"**[{task_prefix}-{task.task_id}] {task.task_name}** が登録されました",
                 embed=embed,
             )
+        except ValueError as e:
+            logger.exception("Failed to create the task:")
+            await interaction.response.send_message(f"タスクの作成に失敗しました: {e}")
 
     @bot.tree.command(name="assign", description="タスクにユーザをアサインします")
     async def assign(
