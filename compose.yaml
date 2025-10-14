@@ -1,0 +1,23 @@
+services:
+  tasukuya:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tasukuya-bot
+    restart: unless-stopped
+
+    # 環境変数ファイルを読み込み
+    env_file:
+      - .env
+
+    # データベースファイルを永続化
+    volumes:
+      - ./tasukuya.db:/app/tasukuya.db
+      - ./app.log:/app/app.log
+
+    # ログ設定
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

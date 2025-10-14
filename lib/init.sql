@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 -- タスク担当者テーブル
 CREATE TABLE IF NOT EXISTS task_assignees (
-    id TEXT PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_list_id INTEGER,
     task_id INTEGER,
     user_id TEXT,
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS task_assignees (
 
 -- Webセッションテーブル
 CREATE TABLE IF NOT EXISTS web_sessions (
-    id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id INTEGER, -- Guild.guild_id は INTEGER のため型を合わせています
     session_key TEXT,
     -- server_default=func.now() + func.interval("1 hour") をSQLiteの関数で表現
