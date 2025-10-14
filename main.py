@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from lib.operate import (
     TasukuyaError,
     assign_user,
+    clone_task,
     create_guild,
     create_task,
     create_tasklist,
@@ -25,6 +26,8 @@ from lib.operate import (
     mark_task_done,
     mark_task_undone,
     parse_task_id,
+    rename_task,
+    reschedule_task,
     unassign_user,
 )
 
@@ -133,10 +136,11 @@ async def _main() -> None:
     ) -> None:
         try:
             logger.info(
-                "Setup Request - User: %s - %s on %s",
+                "Setup Request - User: %s - %s on %s, prefix: %s",
                 interaction.user.id,
                 interaction.user.global_name,
                 interaction.user.guild.id,
+                prefix,
             )
             with SessionLocal() as session:
                 guild = create_guild(
@@ -145,19 +149,19 @@ async def _main() -> None:
                     guild_name=interaction.guild.name,
                     create_user_id=str(interaction.user.id),
                 )
-                _ = create_tasklist(
+                logger.info("Guild created/retrieved: %s", guild.guild_id)
+                task_list = create_tasklist(
                     session,
                     guild_id=str(guild.guild_id),
                     prefix=prefix,
                 )
-            await interaction.response.send_message(
-                f"Create New Task List: {prefix}",
-            )
+                logger.info("Task list created: %s", task_list.id)
         except TasukuyaError as e:
-            logger.exception("An Excepted Error has occured")
+            logger.exception("Tasukuya Error occurred during setup")
             await interaction.response.send_message(f"エラー: {e}")
+            return
         except Exception as e:
-            logger.exception("An error occurred during setup command")
+            logger.exception("Unexpected error occurred during setup")
             if DEBUG:
                 await interaction.response.send_message(
                     f"Unexpected Error. [DEBUG]: {e}",
@@ -166,10 +170,12 @@ async def _main() -> None:
                 await interaction.response.send_message(
                     "Unexpected Error. Please contact service administrator.",
                 )
-        else:
-            message = f"サーバ {interaction.guild.id} で リスト {prefix} を作成しました"
-            logger.info(message)
-            await interaction.response.send_message(message)
+            return
+
+        # 成功時の処理
+        message = f"サーバ {interaction.guild.name} で リスト {prefix} を作成しました"
+        logger.info(message)
+        await interaction.response.send_message(message)
 
     @bot.tree.command(name="create", description="タスクを作成します")
     async def create(
@@ -186,26 +192,32 @@ async def _main() -> None:
             msg += f"Task Due Date: {due_date}"
             logger.info(msg)
             with SessionLocal() as session:
-                task_id, task_prefix = get_tasklist(
+                task_list_id, task_prefix = get_tasklist(
                     session,
                     str(interaction.user.guild.id),
                     task_list_prefix,
                 )
+                if task_list_id is None:
+                    logger.error("No matching task list was found.")
+                    await interaction.response.send_message(
+                        "タスクリストが見つかりません",
+                    )
+                    return
                 task = create_task(
                     session,
-                    task_id,
+                    task_list_id,
                     task_name,
                     due_date,
                 )
-            if task_id is None:
-                logger.error("No matching task list was found.")
-                await interaction.response.send_message("タスクリストが見つかりません")
-                return
-        except ValueError as e:
-            logger.exception("Failed to create the task:")
-            await interaction.response.send_message(f"タスクの作成に失敗しました: {e}")
-        else:
-            # 成功時のみ embed を作成して送信
+                task, assignees = assign_user(
+                    session,
+                    task_list_id,
+                    task.task_id,
+                    [interaction.user],
+                    False,
+                )
+                assignees_text = " ".join([f"<@{i.user_id}>" for i in assignees])
+                # 成功時のみ embed を作成して送信
             logger.info("Create Task List Successfully")
             embed = discord.Embed(
                 title=f"[{task_prefix}-{task.task_id}] {task.task_name}",
@@ -216,12 +228,18 @@ async def _main() -> None:
                 task.due_date.strftime("%Y/%m/%d %H:%M") if task.due_date else "未設定"
             )
             embed.add_field(name="Due Date", value=formatted_time)
-            embed.add_field(name="Assignee", value="Not Assigned")
+            embed.add_field(
+                name="Assignee",
+                value=assignees_text if assignees_text else "Not Assigned",
+            )
             embed.add_field(name="Done", value="Not yet")
             await interaction.response.send_message(
                 f"**[{task_prefix}-{task.task_id}] {task.task_name}** が登録されました",
                 embed=embed,
             )
+        except ValueError as e:
+            logger.exception("Failed to create the task:")
+            await interaction.response.send_message(f"タスクの作成に失敗しました: {e}")
 
     @bot.tree.command(name="assign", description="タスクにユーザをアサインします")
     async def assign(
@@ -675,6 +693,226 @@ async def _main() -> None:
             await interaction.response.send_message(
                 f"タスクの削除に失敗しました: {e}",
             )
+
+    @bot.tree.command(name="rename", description="タスク名を変更します")
+    async def rename(
+        interaction: discord.Interaction,
+        task_id: str,
+        new_name: str,
+    ) -> None:
+        try:
+            msg = "Rename Task Request:, "
+            msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+            msg += f"Task ID: {task_id}, "
+            msg += f"New Name: {new_name}"
+            logger.info(msg)
+            t_prefix_like, t_id_like = parse_task_id(task_id)
+            with SessionLocal() as session:
+                task_list_id, task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    t_prefix_like,
+                )
+                if task_list_id is None:
+                    if t_prefix_like is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
+                    else:
+                        msg = "一致するタスクリストがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task, _ = rename_task(
+                    session,
+                    task_list_id,
+                    t_id_like,
+                    new_name,
+                )
+                if task is None:
+                    msg = "一致するタスクがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task_info = {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "due_date": task.due_date,
+                    "done_date": task.done_date,
+                }
+            logger.info("Rename Task Successfully")
+            embed = discord.Embed(
+                title=f"[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}",  # noqa: E501
+                description="Renamed Task",
+                color=0x00FF00,
+            )
+            formatted_due = (
+                task_info["due_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["due_date"]
+                else "未設定"
+            )
+            formatted_done = (
+                task_info["done_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["done_date"]
+                else "Not yet"
+            )
+            embed.add_field(name="Due Date", value=formatted_due)
+            embed.add_field(name="Done", value=formatted_done)
+            await interaction.response.send_message(
+                f"**[{task_list_prefix}-{task_info['task_id']}]** の名前を変更しました",
+                embed=embed,
+            )
+            logger.info("Rename Task Successfully")
+        except Exception as e:
+            logger.exception("Failed to rename the task:")
+            await interaction.response.send_message(
+                f"タスクの名前変更に失敗しました: {e}",
+            )
+
+    @bot.tree.command(name="reschedule", description="タスクの期限を変更します")
+    async def reschedule(
+        interaction: discord.Interaction,
+        task_id: str,
+        new_due_date: discord.Optional[str] = None,
+    ) -> None:
+        try:
+            msg = "Reschedule Task Request:, "
+            msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+            msg += f"Task ID: {task_id}, "
+            msg += f"New Due Date: {new_due_date}"
+            logger.info(msg)
+            t_prefix_like, t_id_like = parse_task_id(task_id)
+            with SessionLocal() as session:
+                task_list_id, task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    t_prefix_like,
+                )
+                if task_list_id is None:
+                    if t_prefix_like is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
+                    else:
+                        msg = "一致するタスクリストがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task, _ = reschedule_task(
+                    session,
+                    task_list_id,
+                    t_id_like,
+                    new_due_date,
+                )
+                if task is None:
+                    msg = "一致するタスクがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                task_info = {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "due_date": task.due_date,
+                    "done_date": task.done_date,
+                }
+            logger.info("Reschedule Task Successfully")
+            embed = discord.Embed(
+                title=f"[{task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}",  # noqa: E501
+                description="Rescheduled Task",
+                color=0x00FF00,
+            )
+            formatted_due = (
+                task_info["due_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["due_date"]
+                else "未設定"
+            )
+            formatted_done = (
+                task_info["done_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["done_date"]
+                else "Not yet"
+            )
+            embed.add_field(name="Due Date", value=formatted_due)
+            embed.add_field(name="Done", value=formatted_done)
+            await interaction.response.send_message(
+                f"**[{task_list_prefix}-{task_info['task_id']}]** の期限を変更しました",
+                embed=embed,
+            )
+            logger.info("Reschedule Task Successfully")
+        except Exception as e:
+            logger.exception("Failed to reschedule the task:")
+            await interaction.response.send_message(
+                f"タスクの期限変更に失敗しました: {e}",
+            )
+
+    @bot.tree.command(name="clone", description="タスクをクローンします")
+    async def clone(
+        interaction: discord.Interaction,
+        task_id: str,
+        target_task_list_id: str | None,
+        task_name_suffix: discord.Optional[str] = None,
+    ) -> None:
+        try:
+            msg = "Clone Task Request:, "
+            msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
+            msg += f"Task ID: {task_id}, "
+            msg += f"Target Task List ID: {target_task_list_id}"
+            logger.info(msg)
+            t_prefix_like, t_id_like = parse_task_id(task_id)
+            with SessionLocal() as session:
+                source_task_list_id, source_task_list_prefix = get_tasklist(
+                    session,
+                    interaction.guild_id,
+                    t_prefix_like,
+                )
+                if source_task_list_id is None:
+                    if t_prefix_like is None:
+                        msg = "このサーバでデフォルトに指定されているタスクリストがありません"  # noqa: E501
+                    else:
+                        msg = "一致するタスクリストがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+                if target_task_list_id is None:
+                    target_task_list_id = source_task_list_id
+                task, assignees = clone_task(
+                    session,
+                    source_task_list_id,
+                    t_id_like,
+                    target_task_list_id,
+                    f" (cloned by {interaction.user.global_name})"
+                    if task_name_suffix is None
+                    else " (" + task_name_suffix + ")",
+                    [interaction.user],
+                )
+                if task is None:
+                    msg = "一致するタスクがありません"
+                    raise ValueError(msg)  # noqa: TRY301
+
+                # セッション内でタスク情報を取得
+                task_info = {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "due_date": task.due_date,
+                }
+
+                # セッション内でユーザー名を取得
+                task_assignees = " ".join(
+                    [f"<@{i.user_id}>" for i in assignees],
+                )
+            logger.info("Clone Task Successfully")
+            embed = discord.Embed(
+                title=f"[{source_task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}",  # noqa: E501
+                description="Cloned Task",
+                color=0x00FF00,
+            )
+            formatted_time = (
+                task_info["due_date"].strftime("%Y/%m/%d %H:%M")
+                if task_info["due_date"]
+                else "未設定"
+            )
+            embed.add_field(name="Due Date", value=formatted_time)
+            embed.add_field(
+                name="Assignee",
+                value=task_assignees if task_assignees else "Not Assigned",
+            )
+            embed.add_field(name="Done", value="Not yet")
+            await interaction.response.send_message(
+                f"**[{source_task_list_prefix}-{task_info['task_id']}] {task_info['task_name']}** がクローンされました",  # noqa: E501
+                embed=embed,
+            )
+        except Exception as e:
+            logger.exception("Failed to clone the task:")
+            await interaction.response.send_message(
+                f"タスクのクローンに失敗しました: {e}",
+            )
+            msg = "Failed to clone the task:"
+            logger.exception(msg)
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

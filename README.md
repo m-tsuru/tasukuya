@@ -1,49 +1,187 @@
-# tasukuya
+# タスクやさん♪
 
-> （格言未定）
+タスクが売ってる。
 
-## Implementation
+## コマンドリファレンス
 
-コマンドを列挙します．
+### `/ping`: ガンを飛ばす
 
-### Implemented
+正常に タスクやさん が起動しているか試すことができます。
 
-実装済みのコマンドです．
+### `/setup`: ToDo リストをセットアップする
 
-<details>
-<summary>/ping</summary>
-ECHO Request
-</details>
-<details>
-<summary>/setup PREFIX</summary>
-</details>
+```
+/setup prefix
+```
 
-### Not Implemented
+タスクリストを作成します。
 
-未実装のコマンドです．
+サーバーで初めてのタスクリストが作成された場合、それがデフォルトのタスクリストになります。
 
+### `/create`: タスクを作る
 
-<details>
-<summary>/create TASK-NAME [due] [sub-task-following]</summary>
-</details>
-<details>
-<summary>/done TASK-ID</summary>
-</details>
-<details>
-<summary>/delete TASK-ID</summary>
-</details>
-<details>
-<summary>/assign TASK-ID ASSIGNEE</summary>
-</details>
-<details>
-<summary>/reassign TASK-ID ASSIGNEE</summary>
-</details>
-<details>
-<summary>/unassign TASK-ID ASSIGNEE</summary>
-</details>
-<details>
-<summary>/reschedule TASK-ID due-date</summary>
-</details>
-<details>
-<summary>/list [ASSIGNEE] [PREFIX]</summary>
-</details>
+```
+/create task_name [due_date] [task_list_prefix]
+```
+
+タスクを作成することができます。
+
+#### 引数
+
+- task_name: タスクの名前
+
+- due_date: [非必須] 締切日
+    入力形式は [日付](#日付) を参照してください。
+    入力されなかった場合、今から 1 週間後を指定します。
+
+- task_list_prefix: 保存先タスクリストのプレフィックス
+    - タスクを保存するタスクリストのプレフィックスを設定します
+    - 空の場合、サーバでデフォルトのタスクリストに追加されます
+    - サーバにタスクリストが存在しない場合、エラーを返します
+
+### `/assign`: タスクにユーザを割り当てる
+
+```
+/assign task_id assignee [overwrite]
+```
+
+指定したタスクにユーザを担当者として割り当てます。
+
+#### 引数
+
+- task_id: 対象のタスク ID（[タスク ID](#タスク-id) の形式）
+- assignee: 割り当てるユーザ
+- overwrite: [非必須] 既存の担当者を上書きするかどうか（デフォルト: false）
+
+### `/unassign`: タスクからユーザを外す
+
+```
+/unassign task_id [user]
+```
+
+指定したタスクからユーザの割り当てを解除します。
+
+#### 引数
+
+- task_id: 対象のタスク ID（[タスク ID](#タスク-id) の形式）
+- user: [非必須] 解除するユーザ（指定しない場合、全ての担当者を解除）
+
+### `/list`: タスク一覧を表示する
+
+```
+/list [task_list_prefix] [page] [assignee] [max_entries] [order_by_due_date] [is_done]
+```
+
+タスクの一覧を表示します。
+
+#### 引数
+
+- task_list_prefix: [非必須] 表示するタスクリストのプレフィックス
+- page: [非必須] 表示するページ番号（デフォルト: 1）
+- assignee: [非必須] 特定の担当者のタスクのみ表示
+- max_entries: [非必須] 1ページあたりの表示件数（デフォルト: 10）
+- order_by_due_date: [非必須] 締切日順で並び替えるかどうか（デフォルト: true）
+- is_done: [非必須] 完了したタスクを表示するかどうか（デフォルト: false）
+
+### `/done`: タスクを完了にする
+
+```
+/done task_id
+```
+
+指定したタスクを完了状態にマークします。
+
+#### 引数
+
+- task_id: 対象のタスク ID（[タスク ID](#タスク-id) の形式）
+
+### `/undone`: タスクを未完了に戻す
+
+```
+/undone task_id
+```
+
+指定したタスクを未完了状態に戻します。
+
+#### 引数
+
+- task_id: 対象のタスク ID（[タスク ID](#タスク-id) の形式）
+
+### `/rename`: タスク名を変更する
+
+```
+/rename task_id new_name
+```
+
+指定したタスクの名前を変更します。
+
+#### 引数
+
+- task_id: 対象のタスク ID（[タスク ID](#タスク-id) の形式）
+- new_name: 新しいタスク名
+
+### `/reschedule`: タスクの締切を変更する
+
+```
+/reschedule task_id new_due_date
+```
+
+指定したタスクの締切日を変更します。
+
+#### 引数
+
+- task_id: 対象のタスク ID（[タスク ID](#タスク-id) の形式）
+- new_due_date: 新しい締切日（[日付](#日付) の形式）
+
+### `/clone`: タスクを複製する
+
+```
+/clone task_id [new_task_name] [new_due_date]
+```
+
+指定したタスクを複製して新しいタスクを作成します。
+
+#### 引数
+
+- task_id: 複製元のタスク ID（[タスク ID](#タスク-id) の形式）
+- new_task_name: [非必須] 新しいタスクの名前（指定しない場合、元のタスク名に「(Copy)」が追加される）
+- new_due_date: [非必須] 新しい締切日（[日付](#日付) の形式）
+
+### `/delete`: タスクを削除する
+
+```
+/delete task_id
+```
+
+指定したタスクを削除します。
+
+#### 引数
+
+- task_id: 削除するタスク ID（[タスク ID](#タスク-id) の形式）
+
+## 特殊な入力形式
+
+一部の引数は、特殊な入力形式をとります。
+
+### 日付
+
+Discord のコマンド引数には、日付を入力する形がないので、文字列で代用します。
+
+- `MMDD`
+    4 桁の半角数字を入力すると、同年 MM 月 DD 日の形で解釈します
+- `MMDDf`
+    4 桁の半角数字に f を入力すると 同年 MM 月 DD 日 23 時 59 分 の形で解釈します
+- `YYYYMMDD`
+    8 桁の半角数字を入力すると YYYY 年 MM 月 DD 日 00 時 00 分の形で解釈します
+- `YYYYMMDDHHmm`
+    12 桁の半角数字を入力すると YYYY 年 MM 月 DD 日 HH 時 mm 分の形で解釈します
+
+上記の形式に一致しない時、エラーを返します。
+
+### タスク ID
+
+タスク ID は `XXX-123` のような形式をとります。
+
+このうち、XXX は プレフィックスで、123 はタスクの通し番号です
+
+タスク ID を入力する時、単に「123」のようにプレフィックスを入力しない形をとった場合、タスクはサーバーのデフォルトのタスクリストから検索されます。

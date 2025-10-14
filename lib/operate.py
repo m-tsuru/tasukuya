@@ -48,20 +48,35 @@ def parse_date(
             year=now.year,
             month=dt_partial.month,
             day=dt_partial.day,
-            hour=now.hour,
-            minute=now.minute,
-            second=now.second,
+            hour=0,
+            minute=0,
+            second=0,
             tzinfo=tz,
         )
+    elif len(like_date_strings) == 5:  # noqa: PLR2004
+        if like_date_strings[4] == "f":
+            dt_partial = datetime.datetime.strptime(like_date_strings[0:3], "%m%d")  # noqa: DTZ007
+            dt = datetime.datetime(
+                year=now.year,
+                month=dt_partial.month,
+                day=dt_partial.day,
+                hour=23,
+                minute=59,
+                second=59,
+                tzinfo=tz,
+            )
+        else:
+            msg = "Invalid Date Format"
+            raise ValueError(msg)
     elif len(like_date_strings) == 8:  # noqa: PLR2004
         dt_partial = datetime.datetime.strptime(like_date_strings, "%Y%m%d")  # noqa: DTZ007
         dt = datetime.datetime(
             year=dt_partial.year,
             month=dt_partial.month,
             day=dt_partial.day,
-            hour=now.hour,
-            minute=now.minute,
-            second=now.second,
+            hour=0,
+            minute=0,
+            second=0,
             tzinfo=tz,
         )
     elif len(like_date_strings) == 12:  # noqa: PLR2004
@@ -160,34 +175,42 @@ def create_tasklist(
     db: Session,
     guild_id: str,
     prefix: str,
-) -> tuple[int, str]:
-    """
-    Create a new task list.
+    is_default: bool = False,  # noqa: FBT001, FBT002
+) -> TaskList:
+    """Create a new task list for the specified guild."""
+    try:
+        # 重複チェック
+        existing = (
+            db.query(TaskList)
+            .filter(TaskList.guild_id == guild_id, TaskList.prefix == prefix)
+            .first()
+        )
+        if existing is not None:
+            msg = f"Task list with prefix '{prefix}' already exists"
+            raise TasukuyaError(msg)
 
-    Before creating the task list, the `get_tasklist_prefix()` function determines the
-    following:
-    1. If duplicate task prefix exist within the same guild, an error will be returned.
-    2. If the specified guild does not have a task list with the index, create one with
-    the index flag set.
-    """
+        # はじめてのリストかチェック
+        is_first = db.query(TaskList).filter(TaskList.guild_id == guild_id).first()
+        if is_first is not None:
+            is_default = True
 
-    default = False
-    if get_tasklist(db, guild_id, prefix) is not None:
-        e = "TaskList with the same prefix already exists"
-        raise TasukuyaError(e)
-    if get_tasklist(db, guild_id, None) is None:
-        default = True
-
-    tl = TaskList(
-        guild_id=guild_id,
-        prefix=prefix,
-        default=default,
-    )
-
-    db.add(tl)
-    db.commit()
-    db.refresh(tl)
-    return tl.id, tl.prefix
+        task_list = TaskList(
+            guild_id=guild_id,
+            prefix=prefix,
+            default=is_default,
+        )
+        db.add(task_list)
+        db.commit()
+        db.refresh(task_list)
+    except TasukuyaError:
+        # TasukuyaErrorはそのまま再発生
+        raise
+    except Exception as e:
+        # 元の例外情報を保持してログに出力
+        db.rollback()
+        raise TasukuyaError(f"Failed to create task list: {e}") from e
+    else:
+        return task_list
 
 
 def create_task(
@@ -490,3 +513,72 @@ def delete_task(
     db.commit()
 
     return copy
+
+
+def clone_task(
+    db: Session,
+    source_task_list_id: str | None,
+    source_task_id: int,  # str -> int に変更
+    target_task_list_id: str | None,
+    task_name_suffix: str | None,
+    assignees: list[DiscordUser | DiscordMember],
+) -> tuple[Task, list[User]] | tuple[None, list[None]]:
+    source_task, _ = get_task_with_assignees(
+        db,
+        source_task_list_id,
+        source_task_id,
+    )
+    if source_task is None:
+        return None, []
+    new_task = create_task(
+        db,
+        target_task_list_id,
+        source_task.task_name
+        + (task_name_suffix if task_name_suffix is not None else ""),
+        source_task.due_date.strftime("%Y%m%d%H%M")
+        if source_task.due_date is not None
+        else None,
+    )
+    if len(assignees) == 0:
+        return new_task, []
+
+    for assignee in assignees:
+        _, result_assignees = assign_user(
+            db,
+            target_task_list_id,
+            new_task.task_id,
+            [assignee],
+            False,
+        )
+
+    return new_task, result_assignees
+
+
+def reschedule_task(
+    db: Session,
+    task_list_id: str | None,
+    task_id: int,  # str -> int に変更
+    new_due_date: str | None = None,
+) -> tuple[Task, list[User]] | tuple[None, list[None]]:
+    task, assignees = get_task_with_assignees(db, task_list_id, task_id)
+    if task is None:
+        return None, []
+    task.due_date = parse_date(new_due_date)
+    db.commit()
+    db.refresh(task)
+    return task, assignees
+
+
+def rename_task(
+    db: Session,
+    task_list_id: str | None,
+    task_id: int,  # str -> int に変更
+    new_task_name: str,
+) -> tuple[Task, list[User]] | tuple[None, list[None]]:
+    task, assignees = get_task_with_assignees(db, task_list_id, task_id)
+    if task is None:
+        return None, []
+    task.task_name = new_task_name
+    db.commit()
+    db.refresh(task)
+    return task, assignees
