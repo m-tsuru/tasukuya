@@ -55,7 +55,7 @@ def parse_date(
         )
     elif len(like_date_strings) == 5:  # noqa: PLR2004
         if like_date_strings[4] == "f":
-            dt_partial = datetime.datetime.strptime(like_date_strings[0:3], "%m%d")  # noqa: DTZ007
+            dt_partial = datetime.datetime.strptime(like_date_strings[0:4], "%m%d")  # noqa: DTZ007
             dt = datetime.datetime(
                 year=now.year,
                 month=dt_partial.month,
