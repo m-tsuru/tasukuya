@@ -7,6 +7,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
@@ -105,7 +106,7 @@ async def _main() -> None:
         else:
             logger.info("Guild added to database successfully")
 
-    @bot.tree.command(name="ping", description="ping")
+    @bot.tree.command(name="ping", description="ガンを飛ばす")
     async def ping(interaction: discord.Interaction) -> None:
         try:
             logger.info(
@@ -130,6 +131,9 @@ async def _main() -> None:
                 )
 
     @bot.tree.command(name="setup", description="ToDo リストをセットアップします")
+    @app_commands.describe(
+        prefix="タスクを指定するときのプレフィックス。タスクを指定するときに付与します",
+    )
     async def setup(
         interaction: discord.Interaction,
         prefix: str,
@@ -178,16 +182,21 @@ async def _main() -> None:
         await interaction.response.send_message(message)
 
     @bot.tree.command(name="create", description="タスクを作成します")
+    @app_commands.describe(
+        name="タスクの名前",
+        due_date="タスクの期限 (形式: MMDD, MMDDf, YYYYMMDD, YYYYMMDDHHmm))",
+        task_list_prefix="タスクリストのプレフィックス(省略時はデフォルトのタスクリスト)",
+    )
     async def create(
         interaction: discord.Interaction,
-        task_name: str,
+        name: str,
         due_date: discord.Optional[str] = None,
         task_list_prefix: discord.Optional[str] = None,
     ) -> None:
         try:
             msg = "Create Task Request:, "
             msg += f"User: {interaction.user.global_name} ({interaction.user.id}), "
-            msg += f"Task Name: {task_name}, "
+            msg += f"Task Name: {name}, "
             msg += f"Task List Prefix: {task_list_prefix}, "
             msg += f"Task Due Date: {due_date}"
             logger.info(msg)
@@ -206,7 +215,7 @@ async def _main() -> None:
                 task = create_task(
                     session,
                     task_list_id,
-                    task_name,
+                    name,
                     due_date,
                 )
                 task, assignees = assign_user(
@@ -242,6 +251,10 @@ async def _main() -> None:
             await interaction.response.send_message(f"タスクの作成に失敗しました: {e}")
 
     @bot.tree.command(name="assign", description="タスクにユーザをアサインします")
+    @app_commands.describe(
+        task_id="タスクのID (例: PREFIX-1, 1)",
+        assignee="アサインしたいユーザ",
+    )
     async def assign(
         interaction: discord.Interaction,
         task_id: str,
@@ -318,6 +331,10 @@ async def _main() -> None:
             )
 
     @bot.tree.command(name="unassign", description="タスクからユーザを解放します")
+    @app_commands.describe(
+        task_id="タスクのID (例: PREFIX-1, 1)",
+        user="アサインを解除したいユーザ (省略時はコマンド実行者)",
+    )
     async def unassign(
         interaction: discord.Interaction,
         task_id: str,
@@ -394,6 +411,9 @@ async def _main() -> None:
         )
 
     @bot.tree.command(name="done", description="タスクを完了済みにします")
+    @app_commands.describe(
+        task_id="タスクのID (例: PREFIX-1, 1)",
+    )
     async def done(
         interaction: discord.Interaction,
         task_id: str,
@@ -468,6 +488,9 @@ async def _main() -> None:
             )
 
     @bot.tree.command(name="undone", description="タスクを未完了にします")
+    @app_commands.describe(
+        task_id="タスクのID (例: PREFIX-1, 1)",
+    )
     async def undone(
         interaction: discord.Interaction,
         task_id: str,
@@ -544,8 +567,8 @@ async def _main() -> None:
     @bot.tree.command(name="list", description="タスク一覧を出力します")
     async def list_tasks(
         interaction: discord.Interaction,
-        task_list_prefix: discord.Optional[str] = None,
         assignee: discord.User | None = None,
+        task_list_prefix: discord.Optional[str] = None,
         page: int = 1,
         max_entries: int = 30,
         order_by_due: bool = False,
@@ -575,7 +598,7 @@ async def _main() -> None:
                 tasks, total_pages = get_tasks(
                     session,
                     task_list_id,
-                    str(assignee.id) if assignee else None,
+                    str(assignee.id) if assignee else str(interaction.user.id),
                     max_entries,
                     page,
                     order_by_due,
@@ -630,6 +653,9 @@ async def _main() -> None:
             )
 
     @bot.tree.command(name="delete", description="タスクを削除します")
+    @app_commands.describe(
+        task_id="タスクのID (例: PREFIX-1, 1)",
+    )
     async def delete(
         interaction: discord.Interaction,
         task_id: int,
@@ -695,6 +721,10 @@ async def _main() -> None:
             )
 
     @bot.tree.command(name="rename", description="タスク名を変更します")
+    @app_commands.describe(
+        task_id="タスクのID (例: PREFIX-1, 1)",
+        new_name="新しいタスク名",
+    )
     async def rename(
         interaction: discord.Interaction,
         task_id: str,
@@ -764,10 +794,14 @@ async def _main() -> None:
             )
 
     @bot.tree.command(name="reschedule", description="タスクの期限を変更します")
+    @app_commands.describe(
+        task_id="タスクのID (例: PREFIX-1, 1)",
+        new_due_date="新しい期限 (形式: MMDD, MMDDf, YYYYMMDD, YYYYMMDDHHmm))",
+    )
     async def reschedule(
         interaction: discord.Interaction,
         task_id: str,
-        new_due_date: discord.Optional[str] = None,
+        new_due_date: str,
     ) -> None:
         try:
             msg = "Reschedule Task Request:, "
@@ -833,6 +867,11 @@ async def _main() -> None:
             )
 
     @bot.tree.command(name="clone", description="タスクをクローンします")
+    @app_commands.describe(
+        task_id="タスクのID (例: PREFIX-1, 1)",
+        target_task_list_id="クローン先のタスクリストID (省略時は元のタスクリスト)",
+        task_name_suffix="クローン後のタスク名に付与するサフィックス (省略時は '(cloned by ユーザ名)')",  # noqa: E501
+    )
     async def clone(
         interaction: discord.Interaction,
         task_id: str,
